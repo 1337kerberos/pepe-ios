@@ -467,6 +467,11 @@ final class Voice: NSObject, AVSpeechSynthesizerDelegate {
         scheduleIdle(after: 12)
     }
 
+    private func setIdle(line: String) {
+        ui.phase = .idle; ui.line = line; ui.lineIsError = false; ui.showOpenSettings = false
+        Log.add("voice: \(line)")
+    }
+
     /// state label back to idle, the last line stays visible
     private func scheduleIdle(after s: TimeInterval) {
         idleReset?.cancel()
