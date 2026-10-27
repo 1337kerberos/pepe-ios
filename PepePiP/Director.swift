@@ -28,6 +28,10 @@ let clipAliases: [String: Clip] = [
     "mx_shrug": .shakeNo, "mx_standing_angry": .angry, "meshy_facepalm": .angry, "cmu_wave_hello": .wave,
     "mx_talking_on_phone": .phone, "mx_bored": .bored, "mx_pointing": .explain, "cmu_stretching": .shift, "mx_look_at_watch": .shift,
     "mx_drinking": .look, "vid_smoke_light": .smokeLight, "vid_smoke_exhale": .smokeExhale,
+    // desktop-only clips -> closest on the phone (music / dance / idle-life extras)
+    "wows_desk_dance": .cheering, "cmu_mickey_dance": .cheering, "cmu_charleston_side_by_sid": .cheering, "wows_knee_slide": .veryHappy,
+    "meshy_make_it_rain": .veryHappy, "idle_hands_pockets": .shift, "meshy_idle_arms_crossed": .idle, "cmu_combing_hair": .look,
+    "mx_yawn": .bored, "mx_sitting_idle": .bored, "mx_stand_to_sit": .bored, "mx_sit_to_stand": .acknowledging, "cmu_laugh": .talkingFunny,
 ]
 
 final class Director {
@@ -49,6 +53,8 @@ final class Director {
         switch type {
         case "hello":
             model.brainBusy = (ev["busy"] as? Bool) ?? false
+            model.synced = (ev["sync"] as? Bool) ?? false && ev["clock"] != nil
+            if model.synced { idleTimer?.invalidate(); smokeTimer?.invalidate() }
             oneShot(.wave, hold: 2.2)
             say("hi, ask me anything", hold: 3)
         case "state":
@@ -88,6 +94,7 @@ final class Director {
             onBeat(ev)
         case "brain_down":
             loop(.bored); model.setStatus("brain offline"); model.brainBusy = false
+            scheduleIdleLife(); scheduleSmoke()                     // local fallback while the brain is away
         case "brain_up":
             oneShot(.nod, hold: 1.2); model.setStatus("connected")
         case "interrupt":
@@ -101,7 +108,8 @@ final class Director {
         if s != "idle" { smokeTimer?.invalidate() }
         switch s {
         case "idle":
-            model.brainBusy = false; loop(.idle); model.setStatus("idle"); scheduleIdleLife(); scheduleSmoke()
+            model.brainBusy = false; loop(.idle); model.setStatus("idle")
+            if model.synced { idleTimer?.invalidate(); smokeTimer?.invalidate() } else { scheduleIdleLife(); scheduleSmoke() }   // synced: the brain sends idle_life beats
         case "thinking":
             model.brainBusy = true; loop(.think); model.setStatus("thinking")
         case "working":
@@ -138,17 +146,44 @@ final class Director {
         }
     }
 
-    /// Director beats: take one-shot reactions we can play (react/emote/celebrate/use_prop) and their bubbles.
+    /// Director beats. Unsynced: one-shot reactions we can play (react/emote/celebrate/use_prop) and their bubbles.
+    /// Synced (hello.sync + beat.t0): the clip starts `brainNow() - t0` seconds in so the phone shows the desktop's frame;
+    /// idle_life beats (clip or clip_seq, incl. the smoke sequence) replace the local idle life, music_playing beats
+    /// map the desk dance to the closest clip and put the beat's status ("listening: ...") in the status line.
     private func onBeat(_ ev: [String: Any]) {
         guard let beats = ev["beats"] as? [[String: Any]] else { return }
+        let rule = (ev["rule"] as? String) ?? ""
+        let t0 = ev["t0"] as? Double
+        let synced = model.synced && t0 != nil
+        let offset = synced ? max(0, model.brainNow() - t0!) : 0
         for b in beats {
             let verb = (b["verb"] as? String) ?? ""
-            let raw = ((b["clip"] as? String) ?? "").split(separator: "@").first.map(String.init) ?? ""
+            let seq = (b["clip_seq"] as? [String]) ?? []
+            let rawName = (b["clip"] as? String) ?? seq.first ?? ""
+            let raw = rawName.split(separator: "@").first.map(String.init) ?? ""
             let isLoop = (b["loop"] as? Bool) ?? false
-            if let clip = clipAliases[raw], !isLoop, ["react", "emote", "celebrate", "use_prop"].contains(verb), model.scene.has(clip.rawValue) {
-                if clip == .smokeLight || clip == .smokeExhale { if model.cigarOn { smokeNow() }; continue }
+            let clip = clipAliases[raw].flatMap { model.scene.has($0.rawValue) ? $0 : nil }
+            if synced, let clip { Log.add(String(format: "beat %@: %@ -> %@ @%.2fs", rule, rawName, clip.rawValue, offset)) }
+            let isSmoke = clip == .smokeLight || clip == .smokeExhale || seq.contains { $0.hasPrefix("vid_smoke") }
+            if synced, rule == "music_playing" {
+                if let clip { loop(clip, offset: offset) }
+                if let status = b["status"] as? String { model.setStatus(status.hasPrefix("listening") ? status : "listening: \(status)") }
+                else if (b["bubble"] as? String) != nil { model.setStatus("listening") }
+                if let bubble = b["bubble"] as? String { say(bubble, hold: 4) }
+                continue
+            }
+            if synced, rule == "idle_life", let clip {
+                if isSmoke { if model.cigarOn, offset < 2 { smokeNow() }; continue }
+                let d = model.scene.duration(of: clip.rawValue)
+                if offset < d { oneShot(clip, hold: d - offset, offset: offset) }
+                continue
+            }
+            if let clip, isSmoke { if model.cigarOn, offset < 2 { smokeNow() }; continue }
+            if let clip, !isLoop, ["react", "emote", "celebrate", "use_prop"].contains(verb) {
                 let hold = (b["max_hold_s"] as? Double) ?? model.scene.duration(of: clip.rawValue)
-                oneShot(clip, hold: hold)
+                if offset < hold { oneShot(clip, hold: hold - offset, offset: offset) }
+            } else if synced, let clip, isLoop, ["idle", "act", "say"].contains(verb) {
+                loop(clip, offset: offset)
             }
             if let bubble = b["bubble"] as? String, (b["bubble_style"] as? String) == "aside" { say(bubble, hold: 3) }
             if let status = b["status"] as? String, verb == "gaze" { model.setStatus(status) }
@@ -156,14 +191,14 @@ final class Director {
     }
 
     // MARK: playback helpers
-    private func loop(_ clip: Clip) {
+    private func loop(_ clip: Clip, offset: TimeInterval = 0) {
         baseLoop = clip
-        if CACurrentMediaTime() >= oneShotUntil { model.scene.play(clip.rawValue, loop: true) }
+        if CACurrentMediaTime() >= oneShotUntil { model.scene.play(clip.rawValue, loop: true, offset: offset) }
     }
 
-    private func oneShot(_ clip: Clip, hold: TimeInterval, then: (() -> Void)? = nil) {
+    private func oneShot(_ clip: Clip, hold: TimeInterval, offset: TimeInterval = 0, then: (() -> Void)? = nil) {
         oneShotUntil = CACurrentMediaTime() + hold
-        model.scene.play(clip.rawValue, loop: false)
+        model.scene.play(clip.rawValue, loop: false, offset: offset)
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
             guard let self, CACurrentMediaTime() >= self.oneShotUntil - 0.05 else { return }
             if let then { then() } else { self.model.scene.play(self.baseLoop.rawValue, loop: true) }
@@ -178,8 +213,9 @@ final class Director {
     /// in the glb, then the exhale take (the burst fires at 4.33 s, PepeScene), then back to idle.
     private func scheduleSmoke() {
         smokeTimer?.invalidate()
+        if model.synced { return }
         smokeTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 45...120), repeats: false) { [weak self] _ in
-            guard let self, self.currentState == "idle", self.model.cigarOn else { return }
+            guard let self, self.currentState == "idle", self.model.cigarOn, !self.model.synced else { return }
             self.smokeNow()
             self.scheduleSmoke()
         }
@@ -204,8 +240,9 @@ final class Director {
     /// idle_life: every 8-20 s of idle play a short variation, then return to the base idle.
     private func scheduleIdleLife() {
         idleTimer?.invalidate()
+        if model.synced { return }
         idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 8...20), repeats: false) { [weak self] _ in
-            guard let self, self.currentState == "idle" else { return }
+            guard let self, self.currentState == "idle", !self.model.synced else { return }
             let pick = [Clip.shift, Clip.look, Clip.breathe].randomElement()!
             self.oneShot(pick, hold: min(8, self.model.scene.duration(of: pick.rawValue)))
             self.scheduleIdleLife()

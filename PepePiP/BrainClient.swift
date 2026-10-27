@@ -4,6 +4,10 @@ import Foundation
 final class BrainClient: NSObject, URLSessionWebSocketDelegate {
     var onEvent: (([String: Any]) -> Void)?
     var onConnection: ((Bool) -> Void)?
+    /// brain clock - phone clock, from `hello.clock` (unix seconds); `synced` when the brain says `sync: true`
+    private(set) var clockOffset: TimeInterval = 0
+    private(set) var synced = false
+    func brainNow() -> TimeInterval { Date().timeIntervalSince1970 + clockOffset }
 
     private let url: URL
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
@@ -47,6 +51,13 @@ final class BrainClient: NSObject, URLSessionWebSocketDelegate {
                 if case .string(let s) = message { data = s.data(using: .utf8) }
                 if case .data(let d) = message { data = d }
                 if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if (obj["type"] as? String) == "hello" {
+                        if let clock = obj["clock"] as? Double {
+                            self.clockOffset = clock - Date().timeIntervalSince1970
+                            self.synced = (obj["sync"] as? Bool) ?? false
+                            Log.add(String(format: "hello: brain clock offset %+.3f s, sync %@", self.clockOffset, self.synced ? "on" : "off"))
+                        } else { self.synced = false }
+                    }
                     self.onEvent?(obj)
                 }
                 self.receive(on: t)

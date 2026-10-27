@@ -214,12 +214,20 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     func has(_ clip: String) -> Bool { players[clip] != nil }
 
     /// Crossfade to `clip` (Fox 2 pattern: players attached to the root, play()/stop(withBlendOutDuration:)).
-    func play(_ clip: String, loop: Bool, speed: Double = 1) {
+    /// `offset` starts the clip that many seconds in (beat sync with the desktop): looped clips wrap modulo the duration;
+    /// the player is re-attached so the new timeOffset is honoured.
+    func play(_ clip: String, loop: Bool, speed: Double = 1, offset: TimeInterval = 0) {
         guard let p = players[clip] else { Log.add("no clip \(clip)"); return }
-        if current == clip, loop { return }
+        if current == clip, loop, offset == 0 { return }
         if let c = current, c != clip, let old = players[c] { old.stop(withBlendOutDuration: 0.3) }
         p.animation.repeatCount = loop ? .greatestFiniteMagnitude : 1
         p.speed = CGFloat(speed)
+        let d = max(0.01, p.animation.duration)
+        let off = loop ? offset.truncatingRemainder(dividingBy: d) : min(offset, d)
+        if off > 0 || p.animation.timeOffset != 0 {
+            if scene.rootNode.animationPlayer(forKey: clip) != nil { scene.rootNode.removeAnimation(forKey: clip) }
+            p.animation.timeOffset = off
+        }
         if scene.rootNode.animationPlayer(forKey: clip) == nil { scene.rootNode.addAnimationPlayer(p, forKey: clip) }
         p.play()
         current = clip

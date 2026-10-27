@@ -114,6 +114,14 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   `renderer(_:updateAtTime:)` on every renderer; the old `SCNAction.moveBy` drift could accumulate when several
   renderers advanced the same action, which is the likely cause of the 0.3/0.4 "small Pepe in the corner". The neon
   blobs are placed the same way. The log prints the bbox and the computed camera once per framing change.
+- **0.6: beat sync with the desktop.** `hello` now carries `clock` (unix seconds) and `sync: true`, every `beat` a `t0`.
+  `BrainClient` stores `clockOffset = clock - now` and exposes `brainNow()`; `Director.onBeat` starts a beat's clip
+  `brainNow() - t0` seconds in (`PepeScene.play(..., offset:)` sets the animation's `timeOffset` and re-attaches the
+  player; loops wrap modulo the duration, one-shots past their end are dropped), so the phone shows the desktop's frame.
+  While synced the local idle-life and smoke timers are off: the brain's `idle_life` beats (clip or `clip_seq`, incl.
+  the smoke sequence) drive them; `music_playing` beats map `wows_desk_dance` (not on the phone) to `cheering` as a loop
+  and put the beat's status in the status line ("listening: ..."). When the brain drops, `synced` resets and the local
+  timers come back. One log line per synced beat: `beat <rule>: <clip> -> <phone clip> @<offset>s`.
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 

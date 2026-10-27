@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.5 procedural-backdrops+bbox-framing" }
+enum BuildInfo { static let tag = "0.6 beat-sync" }
 
 enum Background: String, CaseIterable, Identifiable {
     case lounge, office, neon, plain
@@ -62,6 +62,7 @@ final class PepeModel: ObservableObject {
     @Published var cards: [Card] = []
     @Published var cardIndex = 0
     @Published var brainBusy = false
+    @Published var synced = false        // the brain drives idle life / smoke / music with timestamped beats
     @Published var logTick = 0
 
     let scene = PepeScene()
@@ -109,6 +110,7 @@ final class PepeModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.connected = up
+                if !up { self.synced = false }
                 self.director.handle(["type": up ? "brain_up" : "brain_down"])
             }
         }
@@ -116,6 +118,9 @@ final class PepeModel: ObservableObject {
         client = c; c.connect()
         status = "connecting to \(host):\(port)"
     }
+
+    /// Brain time (unix seconds) on the phone's clock; equals Date() when no hello carried a clock.
+    func brainNow() -> TimeInterval { client?.brainNow() ?? Date().timeIntervalSince1970 }
 
     func send(chat text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
