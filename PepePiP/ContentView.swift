@@ -97,6 +97,9 @@ struct SettingsView: View {
                     HStack { Text("Pepe scale"); Slider(value: $model.pepeScale, in: 0.6...1.2, step: 0.05); Text(String(format: "%.2f", model.pepeScale)).monospacedDigit().frame(width: 44) }
                     Toggle("Cigar (idle smoke every 45-120 s)", isOn: $model.cigarOn)
                     Toggle("Show co-workers (\(model.agents.count) agent\(model.agents.count == 1 ? "" : "s") reported)", isOn: $model.showWorkers)
+                    Toggle("Baked smoke (Mantaflow cards; off = particles)", isOn: $model.bakedSmoke)
+                    HStack { Text("Smoke light"); Slider(value: $model.smokeBrightness, in: 0.3...2.5, step: 0.05); Text(String(format: "%.2f", model.smokeBrightness)).monospacedDigit().frame(width: 44) }
+                    Toggle("Smoke atlas: flip V (if the exhale plays upside down)", isOn: $model.smokeFlipV)
                     Button("Exhale now") { model.director.smokeNow() }.disabled(!model.sceneLoaded)
                 }
                 Section {

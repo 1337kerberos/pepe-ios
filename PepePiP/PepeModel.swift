@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.12 voice" }
+enum BuildInfo { static let tag = "0.13 baked smoke" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, street, lounge, office, neon, plain
@@ -72,6 +72,11 @@ final class PepeModel: ObservableObject {
     @Published var micOn: Bool { didSet { UserDefaults.standard.set(micOn, forKey: "micOn"); AudioKeepAlive.shared.configureSession() } }
     @Published var speechLang: String { didSet { UserDefaults.standard.set(speechLang, forKey: "speechLang") } }
     @Published var listening = false
+    /// 0.13 baked smoke (BakedSmoke.swift): six-way Mantaflow cards instead of particles; brightness; atlas V flip (debug)
+    @Published var bakedSmoke: Bool { didSet { UserDefaults.standard.set(bakedSmoke, forKey: "bakedSmoke"); applySmoke() } }
+    @Published var smokeBrightness: Double { didSet { UserDefaults.standard.set(smokeBrightness, forKey: "smokeBrightness"); applySmoke() } }
+    @Published var smokeFlipV: Bool { didSet { UserDefaults.standard.set(smokeFlipV, forKey: "smokeFlipV"); applySmoke() } }
+    func applySmoke() { scene.setBakedSmoke(on: bakedSmoke, brightness: Float(smokeBrightness), flipV: smokeFlipV) }
     @Published var streetTime: StreetTime { didSet { UserDefaults.standard.set(streetTime.rawValue, forKey: "streetTime"); scene.setStreetTime(streetTime) } }
     @Published var showWorkers: Bool { didSet { UserDefaults.standard.set(showWorkers, forKey: "showWorkers"); scene.setWorkers(agents, enabled: showWorkers) } }
     /// Claude Code sessions on the laptop (from hello.agents and {"type":"agents"}); the brain's own session is the main Pepe
@@ -125,6 +130,9 @@ final class PepeModel: ObservableObject {
         background = Background(rawValue: d.string(forKey: "background") ?? "") ?? .ops
         streetTime = StreetTime(rawValue: d.string(forKey: "streetTime") ?? "") ?? .auto
         reactionsOn = d.object(forKey: "reactions") as? Bool ?? true
+        bakedSmoke = d.object(forKey: "bakedSmoke") as? Bool ?? true
+        smokeBrightness = d.object(forKey: "smokeBrightness") as? Double ?? 1.0
+        smokeFlipV = d.object(forKey: "smokeFlipV") as? Bool ?? false
         speakReplies = d.object(forKey: "speakReplies") as? Bool ?? true
         micOn = d.object(forKey: "micOn") as? Bool ?? true
         speechLang = d.string(forKey: "speechLang") ?? "auto"
@@ -139,7 +147,7 @@ final class PepeModel: ObservableObject {
             guard let self else { return }
             if let error { Log.add("glb load failed: \(error)"); self.status = "model failed: \(error.localizedDescription)" }
             else {
-                self.scene.setStreetTime(self.streetTime); self.scene.setBackground(self.background); self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn); self.scene.setFraming(scale: Float(self.pepeScale))
+                self.applySmoke(); self.scene.setStreetTime(self.streetTime); self.scene.setBackground(self.background); self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn); self.scene.setFraming(scale: Float(self.pepeScale))
                 self.sceneLoaded = true; self.director.handle(["type": "state", "state": "idle"])
                 self.scene.setWorkers(self.agents, enabled: self.showWorkers)
                 if self.reactionsOn { self.reactions.start() }

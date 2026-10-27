@@ -49,6 +49,10 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     private var exhaleCount = 0
     private var ops: OpsOffice?
     private var street: StreetSet?
+    private var baked: BakedSmoke?                // 0.13: the Godot six-way smoke card port (replaces the particles when ready)
+    private var bakedOn = true
+    private var keyNode: SCNNode?, rimNode: SCNNode?
+    private var bakedActive: Bool { bakedOn && (baked?.ready ?? false) }
     private var workers: [String: Worker] = [:]
     private var showWorkers = true
     private var glbURL: URL?
@@ -132,13 +136,14 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         setFraming(aspect: camAspect, scale: pepeScale)
         placeCamera(time: 0)
 
-        func add(_ l: SCNLight, _ type: SCNLight.LightType, _ euler: SCNVector3?) {
+        @discardableResult func add(_ l: SCNLight, _ type: SCNLight.LightType, _ euler: SCNVector3?) -> SCNNode {
             l.type = type; l.castsShadow = false
             let n = SCNNode(); n.light = l; if let e = euler { n.eulerAngles = e }; scene.rootNode.addChildNode(n)
+            return n
         }
-        add(keyLight, .directional, SCNVector3(-0.6, 0.5, 0))     // upper front-left
-        add(fillLight, .directional, SCNVector3(-0.3, -1.1, 0))   // front-right
-        add(rimLight, .directional, SCNVector3(-0.4, 2.8, 0))     // from behind, over the shoulder
+        keyNode = add(keyLight, .directional, SCNVector3(-0.6, 0.5, 0))     // upper front-left
+        add(fillLight, .directional, SCNVector3(-0.3, -1.1, 0))             // front-right
+        rimNode = add(rimLight, .directional, SCNVector3(-0.4, 2.8, 0))     // from behind, over the shoulder
         add(ambLight, .ambient, nil)
     }
 
@@ -203,6 +208,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         for (l, p) in [(keyLight, preset.key), (fillLight, preset.fill), (rimLight, preset.rim), (ambLight, preset.amb)] {
             l.color = p.1; l.intensity = p.0 * CGFloat(brightness * dim)
         }
+        pushSmokeLights()
         // backdrop texture: the laptop-made JPEG embedded in EmbeddedBackdrops.swift (the Core Graphics versions came out
         // near-black on device); the CG drawing stays as the fallback if a decode ever fails
         var tex: UIImage? = nil; var source = "none"
@@ -220,6 +226,27 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
 
     /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity (re-applies the current preset).
     func setBrightness(_ factor: Double) { brightness = factor; setBackground(background) }
+
+    /// the baked smoke is lit by the key and the rim light: direction toward each light (world) + colour x intensity / 1000
+    private func pushSmokeLights() {
+        guard let baked else { return }
+        var out: [(dir: simd_float3, color: simd_float3)] = []
+        for (node, light) in [(keyNode, keyLight), (rimNode, rimLight)] {
+            guard let node else { continue }
+            var r: CGFloat = 1, g: CGFloat = 1, b: CGFloat = 1, a: CGFloat = 1
+            (light.color as? UIColor)?.getRed(&r, green: &g, blue: &b, alpha: &a)
+            let k = Float(light.intensity / 1000)
+            out.append((dir: -node.simdWorldFront, color: simd_float3(Float(r), Float(g), Float(b)) * k))
+        }
+        baked.setLights(out)
+    }
+
+    /// Settings > Look > Smoke: baked cards (default) or the 0.3 particles; brightness scales the smoke's light terms
+    func setBakedSmoke(on: Bool, brightness: Float, flipV: Bool) {
+        bakedOn = on
+        baked?.brightness = brightness; baked?.flipV = flipV
+        setCigar(on: cigarOn)
+    }
 
     /// Reactions: face-down sleep dims every light (and the backdrop) over 1.2 s; 1 = normal.
     func setDim(_ factor: Double) {
@@ -373,6 +400,9 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         placeCamera(time: time)
         applySquash()
         if let street, !street.root.isHidden { street.tick(time: time) }
+        if bakedActive, let baked, let cam = cameraNodeRef {
+            baked.tick(camera: cam.presentation.simdWorldPosition, tip: cigarOn ? tipNode?.presentation.simdWorldPosition : nil)
+        }
     }
 
     func duration(of clip: String) -> TimeInterval { durations[clip] ?? 2 }
@@ -431,6 +461,12 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
             w.particleColor = UIColor(red: 0.85, green: 0.85, blue: 0.9, alpha: 1); w.loops = true
             wisp = w
         }
+        let bs = BakedSmoke(); scene.rootNode.addChildNode(bs.root); baked = bs
+        bs.load { [weak self] ok in
+            guard let self, ok else { return }
+            self.pushSmokeLights()
+            self.setCigar(on: self.cigarOn)            // swap the particle wisp for the baked tip card
+        }
         let puff = PepeScene.puffImage
         Log.add("cigar: mesh \(propMesh != nil) bone \(cigarBone != nil) head \(headNode != nil) mouth \(mouthInHead); puff texture \(Int(puff.size.width))x\(Int(puff.size.height)) (procedural)")
         setCigar(on: cigarOn)
@@ -439,14 +475,20 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     func setCigar(on: Bool) {
         cigarOn = on
         propMesh?.isHidden = !on
+        baked?.setTip(on: on && bakedActive)
         guard let tip = tipNode, let w = wisp else { return }
-        if on { if tip.particleSystems?.isEmpty ?? true { tip.addParticleSystem(w) } } else { tip.removeAllParticleSystems() }
+        if on && !bakedActive { if tip.particleSystems?.isEmpty ?? true { tip.addParticleSystem(w) } } else { tip.removeAllParticleSystems() }
     }
 
     /// Burst from the mouth, blown forward, up and off to his right (the body faces +Z; his right is -X), like the desktop "side" blow.
     func exhale() {
         guard cigarOn, let head = headNode else { return }
         let m = head.presentation.simdWorldTransform * simd_float4(mouthInHead, 1)
+        if bakedActive, let baked {
+            // the card wants a side view: blown to his right (-X, screen left), a little up and toward the camera
+            baked.beginExhale(mouth: simd_float3(m.x, m.y, m.z) + simd_float3(0, 0, 0.02), dir: simd_normalize(simd_float3(-0.75, 0.3, 0.5)))
+            return
+        }
         let node = SCNNode(); node.simdPosition = simd_float3(m.x, m.y, m.z) + simd_float3(0, 0, 0.02)
         let dir = simd_normalize(simd_float3(-0.45, 0.35, 0.8))
         let b = PepeScene.makeSmoke(); b.birthRate = 150; b.emissionDuration = 0.8; b.loops = false     // ~120 particles

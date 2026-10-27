@@ -232,6 +232,24 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   `AVAudioEngineConfigurationChange`. **Needs a device test**: PiP still starts/keeps alive on playAndRecord (if not:
   Microphone off), recognition from the PiP button while backgrounded (error 1700 reported on older iOS), TTS in the
   background, which voices are installed.
+- **0.13: baked smoke** (Settings > Look > "Baked smoke", default on; "Smoke light" slider; "flip V" debug toggle).
+  `PepePiP/BakedSmoke.swift` ports the Godot six-way smoke card (`retarget_lab/smoke_stream.gd` + `fx/smoke_stream.gdshader`,
+  same as `web/smoke.js`): the night1 Mantaflow exhale (12x8 flipbook, 96 frames at 30 fps = 3.2 s) on three cards
+  fanned +-0.42 rad about the blow direction (outer cards 42 %), card plane = blow direction x up, the bake's inflow
+  (mouth_u, mouth_v) pinned to the lips, 6.7 head radii long (0.87 m), left in the world, last 30 % dissolved by alpha
+  erosion; the cigar tip gets the baked tip wisp (75 looping frames) on a Y-up billboard 2.6 head radii tall. A Metal
+  fragment shader modifier does the frame blend, cone mask, erosion and six-way lighting from the key and rim lights
+  (their directions are expressed in each card's axes on the CPU every frame, the Z pair flipped when seen from behind;
+  ambient = mean of the six maps); output premultiplied. Atlases: the half-res web variants (`web/fx/night1/
+  stream_side_*.half.png`, `web/fx/stream_tip_*.half.png`) embedded as base64 PNG by `tools/embed_smoke.py` into
+  `PepePiP/EmbeddedSmoke.swift` (5.3 MB source, 3.95 MB PNG). RGB (lighting) and alpha (density) are independent, so the
+  app copies the decoded bytes into its own mipmapped `rgba8Unorm_srgb` MTLTexture (RGB sRGB-decoded like Godot's
+  `source_color`, alpha linear, nothing premultiplied; the log line "baked smoke atlases" shows ImageIO's alphaInfo).
+  The exhale is blown to his right/screen-left (-0.75, 0.3, 0.5) for a side view of the card; the particles stay as
+  the fallback (toggle off, or if the atlases fail to load). Not ported: the proximity fade (depth texture), the front
+  card. Also in 0.13: `pepe.glb` with the boss `smoke_light` bake (21 clips; the Director plays light -> exhale).
+  **Needs a device test**: that SceneKit compiles the modifier (a failure shows as a magenta/invisible card + a log
+  line from SceneKit), the atlas orientation (rows/V: use "flip V"), the brightness (slider), GPU cost (~38 MB textures).
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 
