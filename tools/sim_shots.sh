@@ -48,7 +48,7 @@ run ops_idle      -background ops    -streetTime day
 run street_day    -background street -streetTime day
 run street_night  -background street -streetTime night
 run smoke_early   -background office -exhaleAt 6.8
-run smoke_late    -background office -exhaleAt 5.4
+run smoke_late    -background office -exhaleAt 5.9
 run smoke_debug   -background plain  -exhaleAt 6.0 -smokeDebug 1
 run smoke_street  -background street -streetTime day -exhaleAt 6.2
 run smoke_parts   -background office -exhaleAt 6.8 -bakedSmoke 0

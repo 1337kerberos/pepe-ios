@@ -556,6 +556,7 @@ final class TextPlane: SCNNode {
         let plane = SCNPlane(width: width, height: height)
         plane.cornerRadius = height * 0.3
         let m = SCNMaterial(); m.lightingModel = .constant; m.isDoubleSided = true; m.blendMode = .alpha; m.writesToDepthBuffer = false
+        m.readsFromDepthBuffer = false            // always on top: the sim showed his fist-pump hands cutting through the bubble
         plane.materials = [m]
         geometry = plane
         constraints = [SCNBillboardConstraint()]
