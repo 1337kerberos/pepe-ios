@@ -87,8 +87,9 @@ struct SeededRandom {
 final class StreetSet {
     let root = SCNNode()
     static let streetYaw: Float = 10 * .pi / 180
-    /// metres per second of the in-place walk clip (make_pepe_glb.py prints it: 1.809 m of Hips travel in 1.70 s)
-    static let walkSpeed: Float = 1.0643
+    /// metres per second of the in-place walk clip (make_pepe_glb.py prints it). 0.17: meshy_walk_normal, 1.315 m of Hips
+    /// travel in 2.567 s on the boss bake (walks.json speed_pepe_mps 0.501); the old cmu "walk" was 1.0643
+    static let walkSpeed: Float = 0.5125
     static let tileLength: Float = 36           // joints (1.5 m), dashes (6 m) and lamps (12 m) all divide it
     static let tileCount = 4                    // coverage: from behind the camera to ~110 m down the street
 

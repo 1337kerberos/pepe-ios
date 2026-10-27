@@ -463,7 +463,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         if scene.rootNode.animationPlayer(forKey: clip) == nil { scene.rootNode.addAnimationPlayer(p, forKey: clip) }
         p.play()
         current = clip
-        street?.walking = clip == "walk"          // the treadmill scrolls only while the walk is the playing clip
+        street?.walking = clip == Clip.walk.rawValue          // the treadmill scrolls only while the walk is the playing clip
         if clip == "smoke_exhale", off < PepeScene.exhaleTime + 0.5 {
             let n = exhaleCount + 1; exhaleCount = n
             // the jaw opens exhaleTime into the take: count from where playback starts (beat sync / test mode offsets)

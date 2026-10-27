@@ -32,11 +32,16 @@ CLIP_DIR = os.path.join(LAB, 'out/wip/web_boss/clips_v2')
 # smoke_light has no boss bake yet (only retarget_lab/anims/vid_smoke_light.glb): it is skipped until baked.
 CLIPS = ['idle_standing_a', 'shifting_weight', 'look_around', 'idle_breathing', 'think', 'typing', 'explain', 'talking_funny',
          'acknowledging', 'head_nod_yes', 'fist_pump', 'very_happy', 'cheering', 'shaking_head_no', 'standing_angry',
-         'wave_hello', 'talking_on_phone', 'bored', 'smoke_light', 'smoke_exhale', 'walk']
+         'wave_hello', 'talking_on_phone', 'bored', 'smoke_light', 'smoke_exhale', 'walk',
+         'meshy_walk_normal', 'meshy_walk_boss']   # 0.17 (research/WALKS.md): Meshy walks, feet fix baked by make_clips_boss.py
 SMOKE_CLIPS = {'smoke_light', 'smoke_exhale'}
 # locomotion clips played IN PLACE on the phone (street treadmill, 0.10): the Hips' horizontal travel is removed linearly
 # over the clip (the bob/sway stays); the world-space speed it had is printed so PepeScene.walkSpeed can match the set to it
 IN_PLACE = {'walk'}
+# 0.17: these clips arrive ALREADY in place from web/make_clips_boss.py (WALK_CLIPS: feet_level 'clips' deg baked, Hips drift
+# removed); their stride speed comes from web/clips_boss.json `inplace` (= retarget_lab/walks.json speed_pepe_mps / rate) and
+# is written into the animation's extras {speed_mps, rate} (PepeScene / StreetSet.walkSpeed should match the set to it)
+PRE_IN_PLACE = {'meshy_walk_normal', 'meshy_walk_boss'}
 CIGAR_BONE, HAND_BONE = 'PROP_cigar', 'RightHand'
 
 
@@ -191,7 +196,12 @@ def merge_clips(J, BIN, clip_paths, grip_from):
             for path, vals, typ in (('translation', np.array(T), 'VEC3'), ('rotation', np.array(R), 'VEC4')):
                 samplers.append({'input': ti, 'output': add_acc(vals, typ), 'interpolation': 'LINEAR'})
                 channels.append({'sampler': len(samplers) - 1, 'target': {'node': cig, 'path': path}})
-        J['animations'].append({'name': name, 'channels': channels, 'samplers': samplers})
+        A_ = {'name': name, 'channels': channels, 'samplers': samplers}
+        if name in PRE_IN_PLACE:
+            ip = json.load(open(os.path.join(LAB, 'web/clips_boss.json')))['clips'][name].get('inplace', {})
+            A_['extras'] = {'speed_mps': ip.get('speed_mps'), 'rate': ip.get('rate', 1.0), 'speed_pepe_mps': ip.get('speed_pepe_mps'), 'bake_speed_mps': (ip.get('bake') or {}).get('bake_speed_mps')}
+            print(f'  {name}: in place (pre-stripped); stride speed {A_["extras"]} (PepeScene.walkSpeed)')
+        J['animations'].append(A_)
         secs = max(float(J['accessors'][s['input']]['max'][0]) for s in samplers)
         print(f'  {name:18s} {len(channels):3d} channels {secs:5.2f} s' + ('  cigar: own tracks' if has_cigar else '  cigar: in hand (baked)')
               + (f'  (no such node in model: {sorted(set(dropped))})' if dropped else ''))

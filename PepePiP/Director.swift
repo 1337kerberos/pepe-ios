@@ -9,7 +9,7 @@ enum Clip: String, CaseIterable {
     case think, typing, explain, talkingFunny = "talking_funny", acknowledging, nod = "head_nod_yes"
     case fistPump = "fist_pump", veryHappy = "very_happy", cheering, shakeNo = "shaking_head_no", angry = "standing_angry"
     case wave = "wave_hello", phone = "talking_on_phone", bored
-    case walk                                                         // in place (0.10 street treadmill)
+    case walk = "meshy_walk_normal"                                   // in place (0.10 street treadmill; 0.17: Meshy normal walk, was the cmu "walk")
     case smokeLight = "smoke_light", smokeExhale = "smoke_exhale"   // smoke_light has no boss bake yet: absent from the glb until baked
 
     var loops: Bool {
@@ -28,7 +28,7 @@ let clipAliases: [String: Clip] = [
     "mx_standing_fist_pump": .fistPump, "mx_victory_idle": .veryHappy, "mx_cheering": .cheering, "mx_shaking_head_no": .shakeNo,
     "mx_shrug": .shakeNo, "mx_standing_angry": .angry, "meshy_facepalm": .angry, "cmu_wave_hello": .wave,
     "mx_talking_on_phone": .phone, "mx_bored": .bored, "mx_pointing": .explain, "cmu_stretching": .shift, "mx_look_at_watch": .shift,
-    "mx_drinking": .look, "cmu_casual_walk": .walk, "vid_smoke_light": .smokeLight, "vid_smoke_exhale": .smokeExhale,
+    "mx_drinking": .look, "cmu_casual_walk": .walk, "meshy_walk_normal": .walk, "meshy_walk_boss": .walk, "vid_smoke_light": .smokeLight, "vid_smoke_exhale": .smokeExhale,
     // desktop-only clips -> closest on the phone (music / dance / idle-life extras)
     "wows_desk_dance": .cheering, "cmu_mickey_dance": .cheering, "cmu_charleston_side_by_sid": .cheering, "wows_knee_slide": .veryHappy,
     "meshy_make_it_rain": .veryHappy, "idle_hands_pockets": .shift, "meshy_idle_arms_crossed": .idle, "cmu_combing_hair": .look,

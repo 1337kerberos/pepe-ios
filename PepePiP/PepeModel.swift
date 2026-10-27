@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.16 approvals from the Lock Screen" }
+enum BuildInfo { static let tag = "0.17 Meshy walks (street walk = meshy_walk_normal)" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, street, nebula, lounge, office, neon, plain
