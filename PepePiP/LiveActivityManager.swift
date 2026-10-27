@@ -12,6 +12,9 @@
 //  - Started at launch once the scene is up (brain or not) and on brain connect; kept alive while the brain is offline
 //    (state "offline" + the local status line) instead of ending after 30 min. Re-requested on foreground if iOS
 //    ended it, unless the user tapped End.
+//
+// 0.16 asks: a new pending question bypasses the 3 s throttle and goes out with an AlertConfiguration (the Lock Screen
+// lights up, the Island expands on the device); its resolution also goes out at once (no alert).
 import Foundation
 import ActivityKit
 import UIKit
@@ -27,6 +30,9 @@ final class LiveActivityManager: ObservableObject {
     private var userEnded = false
     private var lastRequestAt: TimeInterval = 0
     private var observer: Task<Void, Never>?
+    private var lastAskKey = ""            // ask id + sent answer of the last content sent
+    private var alertedAskId = ""          // the ask the last alert was for (one alert per ask)
+    @Published private(set) var alerts = 0
     static let minInterval: TimeInterval = 3
 
     @Published private(set) var phase = "not started"
@@ -70,6 +76,10 @@ final class LiveActivityManager: ObservableObject {
         if activity == nil, Date().timeIntervalSince1970 - lastRequestAt < 30 { return }   // a failed request is retried at most every 30 s
         guard s.signature != lastSignature || activity == nil else { return }
         let now = Date().timeIntervalSince1970
+        if activity != nil, askKey(s) != lastAskKey {                  // 0.16: a question appeared / was answered: now
+            trailing?.cancel(); trailing = nil; pending = nil
+            send(s); return
+        }
         if activity != nil, now - lastUpdate < LiveActivityManager.minInterval {
             pending = s
             if trailing == nil {
@@ -102,11 +112,20 @@ final class LiveActivityManager: ObservableObject {
 
     /// request (synchronous, on the main thread: Activity.request must be called while the app is in the foreground)
     /// or update the running activity
+    private func askKey(_ s: PepeActivityAttributes.ContentState) -> String { "\(s.ask?.id ?? "")|\(s.ask?.sent ?? "")" }
+
     private func send(_ s: PepeActivityAttributes.ContentState) {
-        lastSignature = s.signature; lastUpdate = Date().timeIntervalSince1970
+        lastSignature = s.signature; lastUpdate = Date().timeIntervalSince1970; lastAskKey = askKey(s)
         let c = content(s)
         if let a = activity, a.activityState == .active || a.activityState == .stale {
-            Task { await a.update(c) }
+            if let ask = s.ask, ask.sent.isEmpty, ask.id != alertedAskId {
+                alertedAskId = ask.id; alerts += 1
+                let body = String(ask.text.prefix(120))
+                Log.add("live activity: ask alert \(ask.id) (\(ask.source))")
+                Task { await a.update(c, alertConfiguration: AlertConfiguration(title: "Pepe needs your OK", body: "\(body)", sound: .default)) }
+            } else {
+                Task { await a.update(c) }
+            }
             updatesSent += 1; lastSentLine = "\(s.state): \(s.line)"
             return
         }

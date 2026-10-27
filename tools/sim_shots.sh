@@ -66,24 +66,32 @@ run voice_hold_err -background ops   -talkMode hold -voiceDemo error -voiceAt 3
 run debug_top     -background ops    -openSettings debug -liveStart 2
 run debug_log     -background ops    -openSettings debug -debugAnchor log -settingsAt 2
 run live_panel    -background ops    -openSettings live -liveStart 2
+# 0.16: a pending ask (fake Claude Code gate question): the app card, the Lock Screen preview page, resolution
+run ask_app       -background ops    -ask 1 -askAt 3 -liveStart 2
+run ask_lock      -background ops    -ask 1 -askAt 2 -openSettings live -settingsAt 3 -liveStart 2
+run ask_resolved  -background nebula -ask 1 -askAt 3 -askResolveAt 10 -liveStart 2
 
 # Live Activity in the Dynamic Island: start it, then put the app in the background (Settings app in front)
+# island <name> <seconds the app stays in front> <shot times after that...> -- <launch args>
 island() {
+  local name="$1" front="$2"; shift 2; local times=(); while [ "$1" != "--" ]; do times+=("$1"); shift; done; shift
   xcrun simctl terminate "$UDID" "$BID" 2>/dev/null; sleep 1
-  echo "== island"
+  echo "== $name: $*"
   local t0=$(python3 -c 'import time;print(time.time())')
-  xcrun simctl launch --terminate-running-process --stdout="$PWD/$OUT/logs/island.out" --stderr="$PWD/$OUT/logs/island.err" \
-    "$UDID" "$BID" -uiTest 1 -background ops -liveStart 2 >/dev/null || echo "::warning::launch failed for island"
-  python3 -c "import time;d=$t0+6-time.time();time.sleep(max(0,d))"
-  xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/island_6s_app.png" >/dev/null 2>&1
+  xcrun simctl launch --terminate-running-process --stdout="$PWD/$OUT/logs/$name.out" --stderr="$PWD/$OUT/logs/$name.err" \
+    "$UDID" "$BID" -uiTest 1 "$@" >/dev/null || echo "::warning::launch failed for $name"
+  python3 -c "import time;d=$t0+$front-time.time();time.sleep(max(0,d))"
+  xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/${name}_${front}s_app.png" >/dev/null 2>&1
   xcrun simctl launch "$UDID" com.apple.Preferences >/dev/null 2>&1 || echo "::warning::could not open the Settings app"
-  for s in 9 13; do
+  for s in "${times[@]}"; do
     python3 -c "import time;d=$t0+$s-time.time();time.sleep(max(0,d))"
-    xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/island_${s}s_bg.png" >/dev/null 2>&1
+    xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/${name}_${s}s_bg.png" >/dev/null 2>&1
   done
   xcrun simctl terminate "$UDID" com.apple.Preferences 2>/dev/null
 }
-island
+island island     6 9 13 -- -background ops -liveStart 2
+# 0.16: the ask arrives while the app is in the background (alert update -> the Island expands on a device), then sits
+island island_ask 5 6.5 8 11 15 -- -background ops -liveStart 2 -ask 1 -askAt 6
 
 xcrun simctl terminate "$UDID" "$BID" 2>/dev/null
 sleep 2; kill $LOGPID 2>/dev/null
@@ -112,6 +120,11 @@ echo "--- 0.15 voice / live activity ---"
 grep -h "voice demo\|TEST install\|TEST live activity\|live activity:" "$OUT"/logs/voice_tap.err "$OUT"/logs/debug_top.err "$OUT"/logs/live_panel.err "$OUT"/logs/island.err 2>/dev/null | head -30
 grep -q "voice demo: listening" "$OUT/logs/voice_tap.err" || { echo "::error::voice demo did not run"; fail=1; }
 grep -q "TEST live activity" "$OUT/logs/live_panel.err" || { echo "::error::live activity start did not run"; fail=1; }
+echo "--- 0.16 asks ---"
+grep -h "TEST ask\|ask alert\|ask test-ask\|resolved" "$OUT"/logs/ask_app.err "$OUT"/logs/ask_resolved.err "$OUT"/logs/island_ask.err 2>/dev/null | head -20
+grep -q "TEST ask demo: pending 1, live activity ask test-ask-1" "$OUT/logs/ask_app.err" || { echo "::error::ask demo did not reach the model / Live Activity content"; fail=1; }
+grep -q "TEST ask resolved: pending 0" "$OUT/logs/ask_resolved.err" || { echo "::error::ask_resolved did not clear the ask"; fail=1; }
+grep -q "live activity: ask alert test-ask-1" "$OUT/logs/island_ask.err" || echo "::warning::no ask alert update logged in island_ask (activity not running in the sim?)"
 echo "player-material pixel-buffer errors: $(grep -c "Could not get pixel buffer" "$OUT/logs/oslog.txt")"
 echo "--- SceneKit error lines (all, deduplicated) ---"
 grep -h "SceneKit\]" "$OUT/logs/oslog.txt" | sed 's/^.*\] //' | sort | uniq -c | sort -rn | head -20

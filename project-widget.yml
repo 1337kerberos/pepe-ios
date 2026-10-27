@@ -38,8 +38,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: lab.pepe.pip
         INFOPLIST_FILE: PepePiP/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "0.15"
-        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "0.16"
+        CURRENT_PROJECT_VERSION: "21"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
@@ -55,8 +55,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: lab.pepe.pip.widget
         INFOPLIST_FILE: PepeWidget/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "0.15"
-        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "0.16"
+        CURRENT_PROJECT_VERSION: "21"
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_IDENTITY: ""

@@ -20,8 +20,13 @@ struct ContentView: View {
                         if model.pipActive { Text("PiP").font(.caption.bold()).padding(.horizontal, 6).background(.blue, in: Capsule()).foregroundStyle(.white) }
                     }.padding(10)
                 }
+            if let ask = model.asks.first {                                   // 0.16: the same question as the Lock Screen
+                AskCardView(ask: ask, more: model.asks.count - 1, connected: model.connected) { answer in
+                    _ = model.answerAsk(id: ask.id, answer: answer, via: "app")
+                }
+            }
             Text(model.status).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-            if let b = model.bubble { Text(b).font(.body).padding(10).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).lineLimit(4) }
+            if let b = model.bubble, model.asks.isEmpty { Text(b).font(.body).padding(10).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).lineLimit(4) }
             HStack {
                 TextField("say something to Pepe", text: $chat).textFieldStyle(.roundedBorder).submitLabel(.send)
                     .onSubmit { model.send(chat: chat); chat = "" }
@@ -51,6 +56,45 @@ struct ContentView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + (TestMode.time("settingsAt") ?? 2.5)) { showSettings = true }
             }
         }
+    }
+}
+
+/// 0.16: a pending ask in the app (same content as the Lock Screen card): who asks, the question, a live countdown,
+/// big Allow / Deny. After a tap it shows what was sent until the brain resolves the ask (any body may answer first).
+struct AskCardView: View {
+    let ask: PepeAsk
+    let more: Int
+    let connected: Bool
+    let answer: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange).symbolEffect(.pulse, options: .repeating)
+                Text("Needs your OK").font(.headline)
+                Text(ask.source).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 4)
+                AskCountdown(expires: ask.expires).font(.callout.bold()).foregroundStyle(.orange).frame(width: 52, alignment: .trailing)
+            }
+            Text(ask.text).font(.body).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            if ask.sent.isEmpty {
+                HStack(spacing: 10) {
+                    Button { answer("allow") } label: { Label("Allow", systemImage: "checkmark").frame(maxWidth: .infinity, minHeight: 30) }.tint(.green)
+                    Button { answer("deny") } label: { Label("Deny", systemImage: "xmark").frame(maxWidth: .infinity, minHeight: 30) }.tint(.red)
+                }
+                .buttonStyle(.borderedProminent).font(.headline).disabled(!connected)
+            } else {
+                Label(ask.sent == "allow" ? "Allowed, waiting for the brain…" : "Denied, waiting for the brain…", systemImage: ask.sent == "allow" ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.subheadline.bold()).foregroundStyle(ask.sent == "allow" ? .green : .red)
+            }
+            if more > 0 || !connected {
+                Text([more > 0 ? "+\(more) more waiting" : "", connected ? "" : "brain offline: answer when it reconnects"].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.orange.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.7), lineWidth: 1.5))
     }
 }
 
@@ -245,7 +289,16 @@ struct SettingsView: View {
             .toolbar { Button("Done") { dismiss() } }
             .navigationDestination(for: String.self) { page in
                 switch page {
-                case "live": Form { LiveActivityPanel() }.navigationTitle("Live Activity")
+                case "live":
+                    Form {
+                        Section {
+                            LockScreenView(state: model.liveActivityContent())
+                                .background(RoundedRectangle(cornerRadius: 22).fill(Color(red: 0.09, green: 0.11, blue: 0.16)))
+                                .environment(\.colorScheme, .dark)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6))
+                        } header: { Text("Lock Screen preview") } footer: { Text("The same view the widget draws (live content). With a question pending its Allow / Deny buttons work here too.") }
+                        LiveActivityPanel()
+                    }.navigationTitle("Live Activity")
                 default: DiagnosticsView(voiceUI: model.voice.ui)
                 }
             }

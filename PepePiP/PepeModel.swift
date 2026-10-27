@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.15 voice + live activity debug" }
+enum BuildInfo { static let tag = "0.16 approvals from the Lock Screen" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, street, nebula, lounge, office, neon, plain
@@ -91,6 +91,9 @@ final class PepeModel: ObservableObject {
     var lastLine = "" { didSet { refreshLiveActivity() } }
     var lastTool = "" { didSet { refreshLiveActivity() } }
     var lastOk: Bool? = nil { didSet { refreshLiveActivity() } }
+    /// 0.16: pending brain asks (oldest first): the app card, the Lock Screen / Island Allow + Deny, the PiP bubble
+    @Published var asks: [PepeAsk] = [] { didSet { refreshLiveActivity() } }
+    private var askTimer: Timer?
     private var pruneTimer: Timer?
 
     /// shown in Settings so builds can be told apart (bump BuildInfo.tag with every change you want to recognise)
@@ -217,6 +220,7 @@ final class PepeModel: ObservableObject {
                 guard let self else { return }
                 self.connected = up
                 if !up { self.synced = false }
+                if up { self.client?.send(["type": "hello", "body": "ios"]) }      // 0.16: answers are attributed to "ios"
                 LiveActivityManager.shared.brainConnected(up)
                 self.director.handle(["type": up ? "brain_up" : "brain_down"])
                 self.refreshLiveActivity(force: true)
@@ -301,10 +305,92 @@ final class PepeModel: ObservableObject {
     func liveActivityContent() -> PepeActivityAttributes.ContentState {
         let line = String((connected ? (lastLine.isEmpty ? status : lastLine) : "brain offline" + (lastLine.isEmpty ? "" : " · last: \(lastLine)")).prefix(80))
         let working = agents.filter { $0.state == "working" || $0.state == "thinking" }.count
-        let state = connected ? laState : (laState == "smoking" ? "smoking" : "sleeping")
+        var ask = asks.first
+        ask?.text = String(asks.first?.text.prefix(200) ?? "")
+        let state = ask != nil ? "waiting" : connected ? laState : (laState == "smoking" ? "smoking" : "sleeping")
         return PepeActivityAttributes.ContentState(state: state, line: line, tool: String(lastTool.prefix(40)),
                                                    agentsWorking: working, agentsTotal: agents.count, agentStates: agents.prefix(6).map { $0.state },
-                                                   ok: lastOk, updatedAt: Date())
+                                                   ok: lastOk, updatedAt: Date(), ask: ask,
+                                                   asksWaiting: asks.count)
+    }
+
+    // MARK: 0.16 asks ("approvals from the Lock Screen"; brain protocol: brain/pepe_brain.py docstring, NIGHT_brain.md 15)
+    /// {"type":"ask",id,...} (or an entry of hello/snapshot `asks`) -> PepeAsk; nil for a legacy ask without an id
+    func parseAsk(_ d: [String: Any]) -> PepeAsk? {
+        guard let id = d["id"] as? String, !id.isEmpty else { return nil }
+        let offset = brainNow() - Date().timeIntervalSince1970               // brain clock - phone clock
+        let ttl = (d["ttl_s"] as? Double) ?? 30
+        let expires = (d["expires"] as? Double).map { Date(timeIntervalSince1970: $0 - offset) } ?? Date().addingTimeInterval(ttl)
+        return PepeAsk(id: id, text: (d["text"] as? String) ?? "?", kind: (d["kind"] as? String) ?? "tool", origin: (d["origin"] as? String) ?? "brain",
+                       tool: (d["tool"] as? String) ?? "", cwd: (d["cwd"] as? String) ?? "", expires: expires)
+    }
+
+    func addAsk(_ a: PepeAsk) {
+        guard !asks.contains(where: { $0.id == a.id }) else { return }
+        asks.append(a)
+        Log.add("ask \(a.id) (\(a.source)): \(a.text.prefix(80)) · \(Int(a.expires.timeIntervalSinceNow)) s")
+        startAskTimer()
+    }
+
+    /// hello / snapshot: the brain's pending list replaces ours (a restarted brain has none)
+    func setAsks(_ list: [[String: Any]]) {
+        let fresh = list.compactMap(parseAsk)
+        let sent = Dictionary(asks.map { ($0.id, $0.sent) }, uniquingKeysWith: { a, _ in a })
+        asks = fresh.map { (a: PepeAsk) -> PepeAsk in var t = a; t.sent = sent[a.id] ?? ""; return t }
+        if !asks.isEmpty { startAskTimer() }
+        Log.add("asks from the brain: \(asks.count) pending")
+    }
+
+    /// {"type":"ask_resolved",id,answer,by}: someone answered (this phone, another body, a chat), the ttl ran out, or the
+    /// requester went away
+    func resolveAsk(_ id: String, answer: String, by: String) {
+        guard let a = asks.first(where: { $0.id == id }) else { return }
+        asks.removeAll { $0.id == id }
+        let what = answer == "allow" ? "allowed" : answer == "deny" ? "denied" : answer == "timeout" ? "no answer" : answer
+        lastLine = "\(what)\(by.isEmpty || by == "ttl" ? "" : " (\(by))"): \(a.text.prefix(60))"
+        if asks.isEmpty, laState == "waiting" { laState = "idle" }
+        Log.add("ask \(id) resolved: \(answer) by \(by)")
+    }
+
+    /// Allow / Deny from the app card or a Live Activity button. False when the brain is not connected (nothing sent).
+    @discardableResult
+    func answerAsk(id: String, answer: String, via: String) -> Bool {
+        guard connected, let client else {
+            Log.add("ask_answer \(answer) for \(id): brain offline, not sent (\(via))")
+            setBubble("can't reach the brain to answer", hold: 4); return false
+        }
+        client.send(["type": "ask_answer", "id": id, "answer": answer, "body": "ios"])
+        if let i = asks.firstIndex(where: { $0.id == id }) { asks[i].sent = answer }
+        Log.add("ask_answer \(answer) -> \(id) (\(via))")
+        return true
+    }
+
+    /// LiveActivityIntent path: the app may have been woken in the background; wait up to 6 s for the socket (like
+    /// Where / Summary), send, then give the brain up to 1.5 s to resolve so the Lock Screen updates before iOS
+    /// suspends us again.
+    func handleAskIntent(id: String, answer: String) async {
+        Log.add("intent: ask_answer \(answer) \(id) (connected \(connected))")
+        var waited = 0
+        while !connected, waited < 12 { try? await Task.sleep(nanoseconds: 500_000_000); waited += 1 }
+        let sent = await MainActor.run { self.answerAsk(id: id, answer: answer, via: "live activity") }
+        guard sent else { return }
+        var w = 0
+        while w < 6 {
+            let open = await MainActor.run { self.asks.contains { $0.id == id } }
+            if !open { break }
+            try? await Task.sleep(nanoseconds: 250_000_000); w += 1
+        }
+    }
+
+    /// drop asks whose time ran out (the brain also sends ask_resolved "timeout"; this covers a lost socket)
+    private func startAskTimer() {
+        guard askTimer == nil else { return }
+        askTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            let gone = self.asks.filter { $0.expires.timeIntervalSinceNow < -3 }
+            for a in gone { self.resolveAsk(a.id, answer: "timeout", by: "") }
+            if self.asks.isEmpty { t.invalidate(); self.askTimer = nil }
+        }
     }
 
     /// Lock Screen / Island buttons (LiveActivityIntent, runs in this process; the app may have been launched in the

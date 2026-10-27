@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         AudioKeepAlive.shared.configureSession()
         PepeIntentBridge.handler = { action in await PepeModel.shared.handleIntent(action) }
+        PepeIntentBridge.answer = { id, answer in await PepeModel.shared.handleAskIntent(id: id, answer: answer) }
         return true
     }
 }

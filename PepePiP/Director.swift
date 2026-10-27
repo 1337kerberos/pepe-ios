@@ -118,6 +118,7 @@ final class Director {
         case "hello":
             model.brainBusy = (ev["busy"] as? Bool) ?? false
             if let list = ev["agents"] as? [[String: Any]] { model.agents = list.compactMap(AgentInfo.init) }
+            model.setAsks((ev["asks"] as? [[String: Any]]) ?? [])               // 0.16
             model.synced = (ev["sync"] as? Bool) ?? false && ev["clock"] != nil
             if model.synced { idleTimer?.invalidate(); smokeTimer?.invalidate() }
             oneShot(.wave, hold: 2.2)
@@ -154,6 +155,11 @@ final class Director {
             say("? \(text)", hold: 20)
             model.setStatus("needs you")
             model.addCard("ask", text)
+            if let a = model.parseAsk(ev) { model.addAsk(a) }                 // 0.16: Allow / Deny card + Lock Screen
+        case "ask_resolved":
+            model.resolveAsk((ev["id"] as? String) ?? "", answer: (ev["answer"] as? String) ?? "", by: (ev["by"] as? String) ?? "")
+        case "snapshot":
+            if let list = ev["asks"] as? [[String: Any]] { model.setAsks(list) }
         case "point":
             oneShot(.explain, hold: 3)
             say((ev["label"] as? String) ?? "there", hold: 4)
