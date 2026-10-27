@@ -250,6 +250,15 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   card. Also in 0.13: `pepe.glb` with the boss `smoke_light` bake (21 clips; the Director plays light -> exhale).
   **Needs a device test**: that SceneKit compiles the modifier (a failure shows as a magenta/invisible card + a log
   line from SceneKit), the atlas orientation (rows/V: use "flip V"), the brightness (slider), GPU cost (~38 MB textures).
+- **Simulator CI (0.13.2-0.13.5)**: `.github/workflows/ios-sim.yml` builds for the iOS Simulator (macos-15, iPhone 16
+  Pro, iOS 26.2 runtime) and runs `tools/sim_shots.sh`: 10 launches in test mode (`PepePiP/TestMode.swift`, launch
+  arguments `-uiTest 1 -background street -streetTime night -testState celebrating -exhaleAt 6 -reaction sleep
+  -bubble ... -smokeDebug 1 -bakedSmoke 0`; no brain, deterministic), screenshots at 3/8/15 s, app log on stderr + the
+  unified log, artifact `sim-screenshots`; the job fails on any `SceneKit] Error` or Metal compile line. It found and
+  fixed: SCNMaterial's own `ambient` swallowing the smoke uniform, Float/Double uniform switching, the character being
+  1.0 m tall (street/smoke/labels were sized for 1.75 m; the old bubble sat above the card), labels occluded by his
+  hands. Harmless SceneKit warning: `unknown type name 'texture2d<float>'` (the textures bind and sample fine).
+  Not testable there: PiP (unsupported in the iPhone simulator), the mic / speech, CoreMotion, battery, Live Activity.
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 
