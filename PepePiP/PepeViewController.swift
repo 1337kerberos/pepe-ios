@@ -26,7 +26,7 @@ final class PepeViewController: UIViewController {
             v.frame = sourceView.bounds; v.autoresizingMask = [.flexibleWidth, .flexibleHeight]; v.isHidden = true; sourceView.addSubview(v)
         }
         scnView.backgroundColor = .black; scnView.antialiasingMode = .multisampling2X; scnView.preferredFramesPerSecond = 60
-        scnView.rendersContinuously = true
+        scnView.rendersContinuously = true; scnView.isPlaying = true   // particles + actions need a playing renderer
         sampleView.displayLayer.videoGravity = .resizeAspect
 
         pip.onActive = { [weak self] on in

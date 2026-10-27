@@ -65,6 +65,7 @@ struct SettingsView: View {
                     Toggle("Live Activity (Dynamic Island) mirror", isOn: $model.liveActivity)
                 }
                 Section("Look") {
+                    Picker("Background", selection: $model.background) { ForEach(Background.allCases) { Text($0.label).tag($0) } }
                     HStack { Text("Brightness"); Slider(value: $model.brightness, in: 0.5...2.0, step: 0.05); Text(String(format: "%.2f", model.brightness)).monospacedDigit().frame(width: 44) }
                     Toggle("Cigar (idle smoke every 45-120 s)", isOn: $model.cigarOn)
                     Button("Exhale now") { model.director.smokeNow() }.disabled(!model.sceneLoaded)

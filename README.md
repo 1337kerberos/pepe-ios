@@ -19,9 +19,11 @@ ios/
   .github/workflows/ios.yml         macos-14 runner: xcodegen -> xcodebuild archive (unsigned) -> Payload zip -> .ipa artifact
   Assets/pepe.glb                   9.7 MB: boss model + cigar + 19 clips embedded, no meshopt/quantization (tools/make_pepe_glb.py)
   Assets/puff.png                   64x64 soft radial sprite for the smoke particles (tools/make_puff.py)
+  Assets/bg_{lounge,office,neon}.png, floor_shadow.png, glow.png   backdrop textures (tools/make_backgrounds.py)
   Assets/README.md                  what is in the glb and how to regenerate it
   tools/make_pepe_glb.py            builds Assets/pepe.glb from the existing bakes (pure Python, no Godot, no gltfpack)
   tools/make_puff.py                builds Assets/puff.png
+  tools/make_backgrounds.py         builds the backdrop textures
   PepePiP/
     PepeApp.swift                   @main App, AppDelegate (audio session), AudioKeepAlive (silent loop while in PiP), Log
     PepeModel.swift                 ObservableObject hub: settings (host/port/PiP mode), status, bubble, cards, summary request
@@ -87,6 +89,17 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   (`out/wip/web_boss/baked/` has none; `retarget_lab/anims/vid_smoke_light.glb` is only the source). Bake it with
   `PEPE_CHAR=pepe_mr_fm PEPE_PROPS=smoke bake.gd`, add `'smoke_light': ('vid_smoke_light', ...)` to NAMES in
   `web/make_clips_boss.py`, rerun it and `tools/make_pepe_glb.py`; the app then plays light -> exhale automatically.
+- **Background** (Settings > Look > Background, default lounge): a 7.5 m textured plane 2.6 m behind Pepe + a floor
+  contact-shadow plane + per-preset light colours/intensities (`PepeScene.setBackground`): *lounge* (dark warm room,
+  warm spot upper-left, cool rim glow, vignette; key 1300 warm, rim 800 cool), *office* (blue-grey, blurred window and
+  desk silhouette; neutral key 1150, ambient 450), *neon* (near-black + two additive green/purple glow sprites drifting
+  on `SCNAction`s; green-tinted key, purple rim), *plain* (no backdrop, the clear colour). Textures come from
+  `tools/make_backgrounds.py` (`Assets/bg_*.png` 1024x1024, `floor_shadow.png`, `glow.png`). The camera drifts +-2 deg of
+  yaw on an 8 s `SCNAction` so the card never looks frozen. All renderers set `isPlaying = true`: SceneKit only advances
+  particle systems and actions on a playing renderer, which is the likeliest reason the 0.2 smoke was invisible.
+- **Smoke at card size** (0.3): burst 150/s x 0.8 s (~120 particles), size 0.1 -> 0.6 m, alpha 0.7 -> 0, colour
+  (0.85, 0.85, 0.9), alpha blend; wisp size 0.04 -> 0.16, alpha 0.4 -> 0. One exhale fires 8 s after launch when the cigar
+  is on; the log prints the puff texture size at scene setup ("puff texture 64x64").
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 

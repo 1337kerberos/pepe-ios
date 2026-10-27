@@ -1,7 +1,8 @@
-// SceneKit scene: pepe.glb (GLTFKit2) with its skinned clips as SCNAnimationPlayers, a fixed 3/4 camera, three lights +
-// ambient scaled by a brightness factor, the bubble + status line as textured planes IN the 3D frame (so they are
-// visible inside the PiP card), the cigar (PROP_mesh, driven by the PROP_cigar bone whose in-hand tracks are baked into
-// every clip by tools/make_pepe_glb.py) with a tip wisp, and an exhale burst from the mouth during the smoke take.
+// SceneKit scene: pepe.glb (GLTFKit2) with its skinned clips as SCNAnimationPlayers, a fixed 3/4 camera with a slow
+// drift, a backdrop preset (lounge / office / neon / plain: textured plane + floor contact shadow + per-preset lights,
+// scaled by a brightness factor), the bubble + status line as textured planes IN the 3D frame (so they are visible
+// inside the PiP card), the cigar (PROP_mesh, driven by the PROP_cigar bone whose in-hand tracks are baked into every
+// clip by tools/make_pepe_glb.py) with a tip wisp, and an exhale burst from the mouth during the smoke take.
 import SceneKit
 import GLTFKit2
 import UIKit
@@ -17,7 +18,12 @@ final class PepeScene {
     private var players: [String: SCNAnimationPlayer] = [:]
     private var durations: [String: TimeInterval] = [:]
     private var current: String?
-    private var lights: [(SCNLight, CGFloat)] = []  // light, base intensity
+    private var keyLight = SCNLight(), fillLight = SCNLight(), rimLight = SCNLight(), ambLight = SCNLight()
+    private var brightness: Double = 1.4
+    private var background: Background = .lounge
+    private var backdrop: SCNNode?
+    private var floorNode: SCNNode?
+    private var blobs: [SCNNode] = []
     private let bubbleNode = TextPlane(width: 1.25, height: 0.42, pixels: CGSize(width: 750, height: 252), font: 34, color: .black, bg: UIColor(white: 1, alpha: 0.95))
     private let statusNode = TextPlane(width: 1.5, height: 0.14, pixels: CGSize(width: 900, height: 84), font: 36, color: .white, bg: UIColor(white: 0, alpha: 0.45))
     // clips are pre-faced +Z (make_clips_boss.py), so the camera sits on the +Z side
@@ -53,7 +59,7 @@ final class PepeScene {
         let source = GLTFSCNSceneSource(asset: asset)
         guard let loaded = source.defaultScene else { Log.add("glb has no default scene"); return }
         scene = loaded
-        scene.background.contents = PepeScene.clearColor   // a framed "window into Pepe's room"
+        scene.background.contents = PepeScene.clearColor
         for anim in source.animations {
             let p = anim.animationPlayer
             p.animation.usesSceneTimeBase = false
@@ -65,37 +71,92 @@ final class PepeScene {
         }
         Log.add("glb: \(players.count) clips: \(players.keys.sorted().joined(separator: " "))")
         addCameraAndLights()
+        addBackdrop()
         bubbleNode.position = SCNVector3(0, 2.02, 0.15); bubbleNode.isHidden = true; scene.rootNode.addChildNode(bubbleNode)
         statusNode.position = SCNVector3(0, 0.42, 0.9); scene.rootNode.addChildNode(statusNode)
         setupCigar()
+        setBackground(background)
         setStatus("ready")
     }
 
+    // MARK: camera, lights, backdrop
     private func addCameraAndLights() {
         let cam = SCNCamera(); cam.fieldOfView = 36; cam.zNear = 0.05; cam.zFar = 30
         let camNode = SCNNode(); camNode.camera = cam
-        camNode.position = SCNVector3(0.85, 1.45, 2.65)              // 3/4 front view, slightly above eye level
+        camNode.position = SCNVector3(0.85 - 0.095, 1.45, 2.65)      // 3/4 front view, slightly above eye level
         let target = SCNNode(); target.position = SCNVector3(0, 1.15, 0); scene.rootNode.addChildNode(target)
         let look = SCNLookAtConstraint(target: target); look.isGimbalLockEnabled = true
         camNode.constraints = [look]
         camNode.name = "pepeCamera"
         scene.rootNode.addChildNode(camNode)
+        // slow drift: +-2 deg of yaw around the look-at target over an 8 s period, so the card never looks frozen
+        let right = SCNAction.moveBy(x: 0.19, y: 0.02, z: 0, duration: 4); right.timingMode = .easeInEaseOut
+        let left = SCNAction.moveBy(x: -0.19, y: -0.02, z: 0, duration: 4); left.timingMode = .easeInEaseOut
+        camNode.runAction(.repeatForever(.sequence([right, left])), forKey: "drift")
 
-        func directional(_ intensity: CGFloat, _ color: UIColor, _ euler: SCNVector3) {
-            let l = SCNLight(); l.type = .directional; l.intensity = intensity; l.color = color; l.castsShadow = false
-            let n = SCNNode(); n.light = l; n.eulerAngles = euler; scene.rootNode.addChildNode(n); lights.append((l, intensity))
+        func add(_ l: SCNLight, _ type: SCNLight.LightType, _ euler: SCNVector3?) {
+            l.type = type; l.castsShadow = false
+            let n = SCNNode(); n.light = l; if let e = euler { n.eulerAngles = e }; scene.rootNode.addChildNode(n)
         }
-        directional(1200, UIColor(red: 1.0, green: 0.96, blue: 0.9, alpha: 1), SCNVector3(-0.6, 0.5, 0))    // key: warm, upper front-left
-        directional(400, UIColor(red: 0.8, green: 0.87, blue: 1.0, alpha: 1), SCNVector3(-0.3, -1.1, 0))    // fill: cool, front-right
-        directional(600, UIColor(red: 0.95, green: 0.95, blue: 1.0, alpha: 1), SCNVector3(-0.4, 2.8, 0))    // rim: from behind, over the shoulder
-        let amb = SCNLight(); amb.type = .ambient; amb.intensity = 350
-        let ambNode = SCNNode(); ambNode.light = amb; scene.rootNode.addChildNode(ambNode); lights.append((amb, 350))
+        add(keyLight, .directional, SCNVector3(-0.6, 0.5, 0))     // upper front-left
+        add(fillLight, .directional, SCNVector3(-0.3, -1.1, 0))   // front-right
+        add(rimLight, .directional, SCNVector3(-0.4, 2.8, 0))     // from behind, over the shoulder
+        add(ambLight, .ambient, nil)
     }
 
-    /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity.
-    func setBrightness(_ factor: Double) {
-        for (l, base) in lights { l.intensity = base * CGFloat(factor) }
+    private func addBackdrop() {
+        let plane = SCNPlane(width: 7.5, height: 7.5)
+        let m = SCNMaterial(); m.lightingModel = .constant; m.isDoubleSided = true
+        plane.materials = [m]
+        let n = SCNNode(geometry: plane); n.position = SCNVector3(0, 2.0, -2.6); n.renderingOrder = -10
+        scene.rootNode.addChildNode(n); backdrop = n
+
+        let floor = SCNPlane(width: 5, height: 5)
+        let fm = SCNMaterial(); fm.lightingModel = .constant; fm.blendMode = .alpha; fm.writesToDepthBuffer = false
+        fm.diffuse.contents = PepeScene.image("floor_shadow"); floor.materials = [fm]
+        let f = SCNNode(geometry: floor); f.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0); f.position = SCNVector3(0, 0.004, 0.1); f.renderingOrder = -5
+        scene.rootNode.addChildNode(f); floorNode = f
+
+        // neon: two soft colour blobs drifting in front of the backdrop (additive glow sprites)
+        for (i, color) in [UIColor(red: 0.2, green: 1.0, blue: 0.5, alpha: 1), UIColor(red: 0.7, green: 0.3, blue: 1.0, alpha: 1)].enumerated() {
+            let g = SCNPlane(width: 3.2, height: 3.2)
+            let gm = SCNMaterial(); gm.lightingModel = .constant; gm.blendMode = .add; gm.writesToDepthBuffer = false
+            gm.diffuse.contents = PepeScene.image("glow"); gm.multiply.contents = color; g.materials = [gm]
+            let b = SCNNode(geometry: g); b.position = SCNVector3(i == 0 ? -1.3 : 1.4, i == 0 ? 2.4 : 0.9, -2.4); b.renderingOrder = -8; b.opacity = 0.8
+            let dx: CGFloat = i == 0 ? 0.9 : -0.8, dy: CGFloat = i == 0 ? -0.5 : 0.6, dur: TimeInterval = i == 0 ? 9 : 7
+            let go = SCNAction.moveBy(x: dx, y: dy, z: 0, duration: dur); go.timingMode = .easeInEaseOut
+            let back = SCNAction.moveBy(x: -dx, y: -dy, z: 0, duration: dur); back.timingMode = .easeInEaseOut
+            b.runAction(.repeatForever(.sequence([go, back])))
+            scene.rootNode.addChildNode(b); blobs.append(b)
+        }
     }
+
+    /// Settings > Background. Per-preset backdrop texture + light colours/intensities (the character stays readable:
+    /// the key never drops below ~1100 before the brightness factor).
+    func setBackground(_ bg: Background) {
+        background = bg
+        struct L { let key: (CGFloat, UIColor), fill: (CGFloat, UIColor), rim: (CGFloat, UIColor), amb: (CGFloat, UIColor) }
+        let c = { (r: CGFloat, g: CGFloat, b: CGFloat) in UIColor(red: r, green: g, blue: b, alpha: 1) }
+        let preset: L
+        switch bg {
+        case .lounge: preset = L(key: (1300, c(1.0, 0.88, 0.74)), fill: (350, c(0.75, 0.82, 1.0)), rim: (800, c(0.7, 0.8, 1.0)), amb: (300, c(1.0, 0.92, 0.85)))
+        case .office: preset = L(key: (1150, c(0.95, 0.97, 1.0)), fill: (500, c(0.85, 0.9, 1.0)), rim: (500, c(1.0, 1.0, 1.0)), amb: (450, c(0.82, 0.87, 0.96)))
+        case .neon:   preset = L(key: (1150, c(0.85, 1.0, 0.9)), fill: (450, c(0.9, 0.75, 1.0)), rim: (900, c(0.8, 0.6, 1.0)), amb: (350, c(0.9, 0.85, 1.0)))
+        case .plain:  preset = L(key: (1200, c(1.0, 0.96, 0.9)), fill: (400, c(0.8, 0.87, 1.0)), rim: (600, c(0.95, 0.95, 1.0)), amb: (350, .white))
+        }
+        for (l, p) in [(keyLight, preset.key), (fillLight, preset.fill), (rimLight, preset.rim), (ambLight, preset.amb)] {
+            l.color = p.1; l.intensity = p.0 * CGFloat(brightness)
+        }
+        let tex: String? = bg == .plain ? nil : "bg_\(bg.rawValue)"
+        backdrop?.isHidden = tex == nil
+        if let tex { backdrop?.geometry?.firstMaterial?.diffuse.contents = PepeScene.image(tex) }
+        floorNode?.isHidden = bg == .plain
+        blobs.forEach { $0.isHidden = bg != .neon }
+        Log.add("background \(bg.rawValue) (texture \(tex.map { PepeScene.image($0) != nil ? "ok" : "MISSING" } ?? "none"))")
+    }
+
+    /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity (re-applies the current preset).
+    func setBrightness(_ factor: Double) { brightness = factor; setBackground(background) }
 
     var cameraNode: SCNNode? { scene.rootNode.childNode(withName: "pepeCamera", recursively: false) }
 
@@ -141,12 +202,13 @@ final class PepeScene {
             let tip = SCNNode(); tip.position = SCNVector3(0, PepeScene.cigarLength, 0); cigar.addChildNode(tip); tipNode = tip
             let w = PepeScene.makeSmoke(); w.birthRate = 12; w.particleLifeSpan = 2.5; w.particleLifeSpanVariation = 0.5
             w.particleVelocity = 0.08; w.particleVelocityVariation = 0.03; w.emittingDirection = SCNVector3(0, 1, 0); w.spreadingAngle = 20
-            w.particleSize = 0.02; w.acceleration = SCNVector3(0, 0.04, 0)
-            w.propertyControllers = [.size: PepeScene.ramp(0.02, 0.08), .opacity: PepeScene.ramp(0.25, 0)]
-            w.particleColor = UIColor(white: 0.85, alpha: 1); w.loops = true
+            w.particleSize = 0.04; w.acceleration = SCNVector3(0, 0.04, 0)
+            w.propertyControllers = [.size: PepeScene.ramp(0.04, 0.16), .opacity: PepeScene.ramp(0.4, 0)]
+            w.particleColor = UIColor(red: 0.85, green: 0.85, blue: 0.9, alpha: 1); w.loops = true
             wisp = w
         }
-        Log.add("cigar: mesh \(propMesh != nil) bone \(cigarBone != nil) head \(headNode != nil) mouth \(mouthInHead)")
+        let puff = PepeScene.puffImage
+        Log.add("cigar: mesh \(propMesh != nil) bone \(cigarBone != nil) head \(headNode != nil) mouth \(mouthInHead); puff texture \(puff.map { "\(Int($0.size.width))x\(Int($0.size.height)) scale \($0.scale)" } ?? "MISSING")")
         setCigar(on: cigarOn)
     }
 
@@ -163,19 +225,22 @@ final class PepeScene {
         let m = head.presentation.simdWorldTransform * simd_float4(mouthInHead, 1)
         let node = SCNNode(); node.simdPosition = simd_float3(m.x, m.y, m.z) + simd_float3(0, 0, 0.02)
         let dir = simd_normalize(simd_float3(-0.45, 0.35, 0.8))
-        let b = PepeScene.makeSmoke(); b.birthRate = 130; b.emissionDuration = 0.6; b.loops = false
+        let b = PepeScene.makeSmoke(); b.birthRate = 150; b.emissionDuration = 0.8; b.loops = false     // ~120 particles
         b.particleLifeSpan = 3; b.particleLifeSpanVariation = 0.6
-        b.particleVelocity = 0.35; b.particleVelocityVariation = 0.15; b.emittingDirection = SCNVector3(dir); b.spreadingAngle = 18
-        b.particleSize = 0.05; b.acceleration = SCNVector3(0, 0.06, 0); b.dampingFactor = 1.5
-        b.propertyControllers = [.size: PepeScene.ramp(0.05, 0.3), .opacity: PepeScene.ramp(0.5, 0)]
-        b.particleColor = UIColor(white: 0.9, alpha: 1)
+        b.particleVelocity = 0.35; b.particleVelocityVariation = 0.15; b.emittingDirection = SCNVector3(dir.x, dir.y, dir.z); b.spreadingAngle = 18
+        b.particleSize = 0.1; b.acceleration = SCNVector3(0, 0.06, 0); b.dampingFactor = 1.5
+        b.propertyControllers = [.size: PepeScene.ramp(0.1, 0.6), .opacity: PepeScene.ramp(0.7, 0)]
+        b.particleColor = UIColor(red: 0.85, green: 0.85, blue: 0.9, alpha: 1)
         node.addParticleSystem(b)
         scene.rootNode.addChildNode(node)
         Log.add("exhale at \(node.simdPosition)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { node.removeFromParentNode() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.8) { node.removeFromParentNode() }
     }
 
-    private static let puffImage: UIImage? = Bundle.main.path(forResource: "puff", ofType: "png").flatMap { UIImage(contentsOfFile: $0) }
+    static func image(_ name: String) -> UIImage? {
+        Bundle.main.path(forResource: name, ofType: "png").flatMap { UIImage(contentsOfFile: $0) }
+    }
+    private static let puffImage: UIImage? = image("puff")
 
     private static func makeSmoke() -> SCNParticleSystem {
         let s = SCNParticleSystem()
@@ -188,7 +253,7 @@ final class PepeScene {
         return s
     }
 
-    /// value over the particle's lifetime (0 -> 1), e.g. size 0.02 -> 0.08 m or opacity 0.25 -> 0
+    /// value over the particle's lifetime (0 -> 1), e.g. size 0.1 -> 0.6 m or opacity 0.7 -> 0
     private static func ramp(_ a: CGFloat, _ b: CGFloat) -> SCNParticlePropertyController {
         let anim = CAKeyframeAnimation(); anim.values = [a, b]; anim.keyTimes = [0, 1]
         return SCNParticlePropertyController(animation: anim)

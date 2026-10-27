@@ -18,6 +18,7 @@ final class PepeMetalView: MTKView, MTKViewDelegate {
         super.init(frame: frame, device: dev)
         renderer = SCNRenderer(device: dev, options: nil)
         renderer.autoenablesDefaultLighting = false
+        renderer.isPlaying = true   // particle systems and SCNActions only advance while the renderer is playing
         colorPixelFormat = .bgra8Unorm
         depthStencilPixelFormat = .depth32Float
         preferredFramesPerSecond = 30
@@ -70,6 +71,7 @@ final class PixelBufferFeeder {
         self.size = size
         renderer = SCNRenderer(device: device, options: nil)
         renderer.autoenablesDefaultLighting = false
+        renderer.isPlaying = true   // particle systems and SCNActions only advance while the renderer is playing
         let attrs: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                                     kCVPixelBufferWidthKey as String: Int(size.width), kCVPixelBufferHeightKey as String: Int(size.height),
                                     kCVPixelBufferIOSurfacePropertiesKey as String: [:], kCVPixelBufferMetalCompatibilityKey as String: true]
