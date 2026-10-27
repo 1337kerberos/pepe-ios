@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.3 backgrounds+camera-drift+visible-smoke" }
+enum BuildInfo { static let tag = "0.4 livecontainer-resources" }
 
 enum Background: String, CaseIterable, Identifiable {
     case lounge, office, neon, plain
@@ -48,7 +48,7 @@ final class PepeModel: ObservableObject {
 
     /// shown in Settings so builds can be told apart (bump BuildInfo.tag with every change you want to recognise)
     static let versionLine: String = {
-        let d = Bundle.main.infoDictionary ?? [:]
+        let d = AppResources.ownBundle.infoDictionary ?? [:]
         return "PepePiP \(d["CFBundleShortVersionString"] ?? "?") (\(d["CFBundleVersion"] ?? "?")) · \(BuildInfo.tag)"
     }()
 

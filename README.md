@@ -29,6 +29,7 @@ ios/
     PepeModel.swift                 ObservableObject hub: settings (host/port/PiP mode), status, bubble, cards, summary request
     BrainClient.swift               URLSessionWebSocketTask client: JSON events in, {"type":"chat"} out, reconnect + pings
     Director.swift                  brain events -> clip (idle/think/typing/explain/celebrate/fail...), status line, bubble, cards
+    AppResources.swift              loose-file lookup that survives LiveContainer (Bundle(for:) / main / exe dir / argv0) + asset inventory log
     PepeScene.swift                 SceneKit scene from pepe.glb (GLTFKit2), SCNAnimationPlayer crossfades, 3/4 camera,
                                     soft lights, bubble + status as textured planes inside the 3D frame (visible in PiP)
     FrameFeeder.swift               PepeMetalView (MTKView drawn by SCNRenderer, iOS 18 PiP source) and PixelBufferFeeder
@@ -100,6 +101,12 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
 - **Smoke at card size** (0.3): burst 150/s x 0.8 s (~120 particles), size 0.1 -> 0.6 m, alpha 0.7 -> 0, colour
   (0.85, 0.85, 0.9), alpha blend; wisp size 0.04 -> 0.16, alpha 0.4 -> 0. One exhale fires 8 s after launch when the cigar
   is on; the log prints the puff texture size at scene setup ("puff texture 64x64").
+- **LiveContainer / guest-app resource lookup** (0.4): inside LiveContainer `Bundle.main` is the host's bundle, so loose
+  files looked up through it are missing (black backdrop, no smoke sprite). Every loose file (glb, PNGs) now goes
+  through `AppResources.url(_:)` (`PepePiP/AppResources.swift`), which tries `Bundle(for: PepeScene.self)`, `Bundle.main`,
+  the class's and main executable directories and `argv[0]`'s directory, logs which one answered the first time, and at
+  scene setup logs once the resolved paths and an ok/MISSING line per asset. The version line also reads the app's own
+  Info.plist rather than the host's.
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 

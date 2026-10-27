@@ -37,8 +37,9 @@ final class PepeScene {
     private var exhaleCount = 0
 
     func load(completion: @escaping (Error?) -> Void) {
-        guard let url = Bundle.main.url(forResource: "pepe", withExtension: "glb") else {
-            completion(NSError(domain: "pepe", code: 1, userInfo: [NSLocalizedDescriptionKey: "pepe.glb missing from the bundle"])); return
+        AppResources.report()
+        guard let url = AppResources.url("pepe.glb") else {
+            completion(NSError(domain: "pepe", code: 1, userInfo: [NSLocalizedDescriptionKey: "pepe.glb not found next to the app (see the log)"])); return
         }
         // README snippet of GLTFKit2: GLTFAsset.load(with:options:) { progress, status, asset, error, stop in ... }
         GLTFAsset.load(with: url, options: [:]) { [weak self] (_, status, maybeAsset, maybeError, _) in
@@ -237,9 +238,7 @@ final class PepeScene {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.8) { node.removeFromParentNode() }
     }
 
-    static func image(_ name: String) -> UIImage? {
-        Bundle.main.path(forResource: name, ofType: "png").flatMap { UIImage(contentsOfFile: $0) }
-    }
+    static func image(_ name: String) -> UIImage? { AppResources.image(name) }
     private static let puffImage: UIImage? = image("puff")
 
     private static func makeSmoke() -> SCNParticleSystem {
