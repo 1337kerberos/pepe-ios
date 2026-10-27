@@ -427,9 +427,10 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         p.play()
         current = clip
         street?.walking = clip == "walk"          // the treadmill scrolls only while the walk is the playing clip
-        if clip == "smoke_exhale" {
+        if clip == "smoke_exhale", off < PepeScene.exhaleTime + 0.5 {
             let n = exhaleCount + 1; exhaleCount = n
-            DispatchQueue.main.asyncAfter(deadline: .now() + PepeScene.exhaleTime / speed) { [weak self] in
+            // the jaw opens exhaleTime into the take: count from where playback starts (beat sync / test mode offsets)
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0, PepeScene.exhaleTime - off) / speed) { [weak self] in
                 guard let self, self.current == clip, self.exhaleCount == n else { return }
                 self.exhale()
             }

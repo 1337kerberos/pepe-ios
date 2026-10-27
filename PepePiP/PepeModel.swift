@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.13.1 baked smoke" }
+enum BuildInfo { static let tag = "0.13.2 sim-tested" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, street, lounge, office, neon, plain
@@ -130,7 +130,7 @@ final class PepeModel: ObservableObject {
         background = Background(rawValue: d.string(forKey: "background") ?? "") ?? .ops
         streetTime = StreetTime(rawValue: d.string(forKey: "streetTime") ?? "") ?? .auto
         reactionsOn = d.object(forKey: "reactions") as? Bool ?? true
-        bakedSmoke = d.object(forKey: "bakedSmoke") as? Bool ?? true
+        bakedSmoke = d.object(forKey: "bakedSmoke") != nil ? d.bool(forKey: "bakedSmoke") : true   // bool(forKey:) also parses a "-bakedSmoke 0" launch argument
         smokeBrightness = d.object(forKey: "smokeBrightness") as? Double ?? 1.0
         smokeFlipV = d.object(forKey: "smokeFlipV") as? Bool ?? false
         speakReplies = d.object(forKey: "speakReplies") as? Bool ?? true
@@ -138,6 +138,7 @@ final class PepeModel: ObservableObject {
         speechLang = d.string(forKey: "speechLang") ?? "auto"
         showWorkers = d.object(forKey: "showWorkers") as? Bool ?? true
         pepeScale = d.object(forKey: "pepeScale") as? Double ?? 1.0
+        _ = TestMode.launch
         director = Director(model: self)
         reactions = Reactions(model: self)
         voice = Voice(model: self)
@@ -152,6 +153,7 @@ final class PepeModel: ObservableObject {
                 self.scene.setWorkers(self.agents, enabled: self.showWorkers)
                 if self.reactionsOn { self.reactions.start() }
                 self.pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.scene.pruneWorkers() }
+                if TestMode.on { TestMode.run(model: self); return }
                 // first-time users see the smoke once, 8 s after launch
                 DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
                     guard let self, self.cigarOn else { return }
@@ -167,6 +169,7 @@ final class PepeModel: ObservableObject {
                 if self.useDiscovered, changed { self.connect() }
             }
         }
+        if TestMode.on { status = "test mode (brain offline)"; Log.add("test mode: no brain connection"); return }
         discovery.start()
         connect()
     }

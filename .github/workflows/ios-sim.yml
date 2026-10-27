@@ -1,0 +1,52 @@
+# Simulator smoke test: builds PepePiP for the iOS Simulator, launches it in test mode (PepePiP/TestMode.swift) in
+# ~8 configurations and captures screenshots + logs (tools/sim_shots.sh). Fails on SceneKit/Metal shader compile errors.
+# No PiP, no mic, no Live Activity in the simulator: this checks rendering, framing, presets and the smoke shader only.
+name: ios-sim
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  sim:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          echo "using $XC"; sudo xcode-select -s "$XC"
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project (app only)
+        run: xcodegen generate --spec project.yml
+
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          mkdir -p simout
+          xcodebuild build -project PepePiP.xcodeproj -scheme PepePiP -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/dd \
+            -skipPackagePluginValidation -skipMacroValidation ONLY_ACTIVE_ARCH=NO ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            2>&1 | tee simout/build.log | grep -E --line-buffered "error:|\*\* .* \*\*" || true
+          grep -q "BUILD SUCCEEDED" simout/build.log || { grep -E "error:" simout/build.log | head -40; exit 1; }
+
+      - name: Screenshots in the simulator
+        run: |
+          APP=$(find build/dd/Build/Products -name PepePiP.app -path "*iphonesimulator*" | head -1)
+          echo "app: $APP"
+          tools/sim_shots.sh "$APP" simout
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim-screenshots
+          path: simout
