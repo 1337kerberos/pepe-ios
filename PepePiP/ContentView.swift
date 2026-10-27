@@ -31,7 +31,7 @@ struct ContentView: View {
                           onPress: { model.voice.pressBegan() }, onRelease: { model.voice.pressEnded() })
             }
             MicPanel(ui: model.voice.ui, hold: model.talkMode == "hold", micOn: model.micOn)
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Button { pipRequest += 1 } label: { Label("Float", systemImage: "pip.enter").lineLimit(1).fixedSize() }.buttonStyle(.borderedProminent).disabled(!model.sceneLoaded)
                 Button { model.requestSummary() } label: { Label("Summary", systemImage: "text.bubble").lineLimit(1).fixedSize() }.buttonStyle(.bordered)
                 Button { model.stepCard(-1) } label: { Image(systemName: "backward.fill") }.buttonStyle(.bordered).controlSize(.small).disabled(model.cards.isEmpty)

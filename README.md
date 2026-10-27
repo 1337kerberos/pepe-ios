@@ -279,6 +279,28 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   purple rim 1500 (0.78, 0.42, 1.0), ambient 260; the baked smoke takes the key + rim, so the plume reads lilac.
   Log lines: `nebula: still WxH`, `nebula: output mode ...`, `nebula: first video frame ...`, `nebula: 240 video frames
   shown`, `nebula: play/pause (why)`. Simulator runs: nebula, nebula_player, nebula_still, nebula_916, nebula_smoke(2).
+- **0.15: voice + Live Activity debugging** (after the first device test on an iPhone 16 Pro Max, iOS 26.4). The mic
+  is a plain view with its own gestures (a SwiftUI `Button` fires only on release, so 0.12-0.14 had no "hold": the
+  release STARTED a 6 s window after the user had stopped talking -> "didn't catch that"). Settings > Voice > Talk mode:
+  **tap** (default: tap, speak, tap again or 2 s without a new word; 10 s to the first word, 30 s cap) or **hold**
+  (`DragGesture(minimumDistance: 0)`: finger down = start, up = send). Under the button `MicPanel`: state label (idle /
+  asking permission / listening / recognizing / sending / sent / error), mic level meter, live partial transcript,
+  locale + on-device/server, and one line for the result or the error (permission denied -> "Open iOS Settings"). Voice
+  keeps every input buffer of a take: if on-device recognition errors, or returns nothing although the mic level showed
+  speech, the same audio is replayed into a server request ("Prefer on-device" toggle). "auto" language now normalises
+  `en_US` -> `en-US` (the 0.12 lookup never matched and took a random `en-*` locale). The session is forced back to
+  playAndRecord before each take; the usage strings of the RUNNING plist are checked before asking (LiveContainer host).
+  **Live Activity**: Settings > Live Activity (Start / End, state not started / requested / active id / ended / denied /
+  disabled, `areActivitiesEnabled`, frequent updates, widget appex present/missing, install kind, last error).
+  `Activity.request` runs synchronously on the main thread with the first state (plus an immediate update), no push
+  type; offline no longer ends it (state offline + local line); re-requested on foreground unless the user ended it;
+  failed requests retried at most every 30 s. Sprites are drawn at the slot's pixel size (the simulator's Island showed
+  a grey placeholder for the 256 px sprite). **Settings > Debug**: build, install kind (simulator / real install with or
+  without profile / LiveContainer guest), widget, permissions (mic, speech, notifications, usage strings,
+  NSSupportsLiveActivities), recognizer, audio session category/mode/route/input, PiP, brain, Live Activity, last 50
+  log lines; Copy report / Share. Simulator matrix (`-voiceDemo`, `-talkMode`, `-openSettings main|debug|live`,
+  `-debugAnchor log`, `-liveStart`): voice_tap, voice_hold_err, debug_top, debug_log, live_panel, island (the sim build
+  now includes PepeWidget; the activity shows in the simulator's Dynamic Island once the app is backgrounded).
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 
