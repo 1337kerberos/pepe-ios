@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.13.2 sim-tested" }
+enum BuildInfo { static let tag = "0.13.3 sim fixes" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, street, lounge, office, neon, plain

@@ -95,6 +95,10 @@ final class StreetSet {
     /// set on the main thread by PepeScene.play (true while the current clip is the walk), read on the render thread
     var walking = false
     var timeOverride: StreetTime = .auto
+    /// the set is modelled for a 1.75 m man; PepeScene scales it to the character (k = height / 1.75). The ground must
+    /// still move at the clip's WORLD speed, so in the set's own (scaled) units it moves walkSpeed / k.
+    private var scale: Float = 1
+    func setScale(_ k: Float) { lock.lock(); scale = max(0.1, k); lock.unlock(); root.scale = SCNVector3(k, k, k) }
     var onPeriodChange: ((StreetTime) -> Void)?
     private(set) var period: StreetTime = StreetTime.fromClock()
 
@@ -149,7 +153,7 @@ final class StreetSet {
         let dt = Float(time - lastTime)
         guard dt > 0 else { return }
         lastTime = time
-        let target: Float = walking ? StreetSet.walkSpeed : 0
+        let target: Float = walking ? StreetSet.walkSpeed / scale : 0
         speed += (target - speed) * min(1, dt * 5)                   // ~0.2 s ease, close to the 0.3 s clip blend
         if abs(speed) < 0.001 { speed = 0 }
         travelled = (travelled + speed * dt).truncatingRemainder(dividingBy: StreetSet.tileLength)
@@ -206,10 +210,10 @@ final class StreetSet {
             wallDim = 1.0; lit = c(0.3, 0.38, 0.48); dark = c(0.24, 0.3, 0.4); lamp = c(0.6, 0.6, 0.58); shop = c(0.4, 0.48, 0.56); skyline = c(0.62, 0.7, 0.8)
         case .dusk:
             sky = [simd_float3(0.16, 0.14, 0.38), simd_float3(0.72, 0.36, 0.42), simd_float3(1.0, 0.55, 0.28)]
-            wallDim = 0.62; lit = c(1.0, 0.78, 0.45); dark = c(0.12, 0.12, 0.2); lamp = c(1.0, 0.82, 0.5); shop = c(1.0, 0.75, 0.45); skyline = c(0.3, 0.22, 0.34)
+            wallDim = 0.62; lit = c(0.85, 0.68, 0.42); dark = c(0.12, 0.12, 0.2); lamp = c(1.0, 0.82, 0.5); shop = c(0.6, 0.46, 0.32); skyline = c(0.3, 0.22, 0.34)
         case .night:
             sky = [simd_float3(0.01, 0.02, 0.06), simd_float3(0.04, 0.06, 0.16), simd_float3(0.12, 0.13, 0.25)]
-            wallDim = 0.4; lit = c(1.0, 0.8, 0.48); dark = c(0.05, 0.06, 0.1); lamp = c(1.0, 0.8, 0.45); shop = c(1.0, 0.72, 0.42); skyline = c(0.06, 0.07, 0.13)
+            wallDim = 0.4; lit = c(0.85, 0.7, 0.45); dark = c(0.05, 0.06, 0.1); lamp = c(1.0, 0.85, 0.6); shop = c(0.55, 0.42, 0.3); skyline = c(0.06, 0.07, 0.13)
         }
         wallMat.multiply.contents = UIColor(white: wallDim, alpha: 1)    // after lighting: the walls follow the sky, Pepe does not
         litMat.diffuse.contents = lit; darkMat.diffuse.contents = dark; lampMat.diffuse.contents = lamp; shopMat.diffuse.contents = shop
@@ -252,7 +256,7 @@ final class StreetSet {
         var r = SeededRandom(seed)
         let b = MeshBuilder(materials: materials.count)
         let L = tileLength, z0: Float = -L, z1: Float = 0
-        let concrete = simd_float3(0.46, 0.45, 0.44), joint = simd_float3(0.28, 0.28, 0.29), asphalt = simd_float3(0.17, 0.17, 0.19)
+        let concrete = simd_float3(0.3, 0.3, 0.3), joint = simd_float3(0.19, 0.19, 0.2), asphalt = simd_float3(0.12, 0.12, 0.14)   // the key is strong: keep the ground mid-grey
         let kerb = simd_float3(0.55, 0.55, 0.53), paint = simd_float3(0.85, 0.85, 0.8)
         // ground: near pavement (Pepe's, x -1.95..2.6), kerb, road (y -0.15, x -8.2..-1.95), far kerb, far pavement (x -10..-8.2)
         b.floor(x0: -1.8, x1: 2.6, z0: z0, z1: z1, y: 0, color: concrete, mat: M.wall)

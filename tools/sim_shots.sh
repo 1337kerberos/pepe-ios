@@ -47,11 +47,13 @@ run() {
 run ops_idle      -background ops    -streetTime day
 run street_day    -background street -streetTime day
 run street_night  -background street -streetTime night
-run smoke_early   -background lounge -exhaleAt 7.0
-run smoke_late    -background lounge -exhaleAt 5.5
-run celebrating   -background ops    -testState celebrating -stateAt 6.5
+run smoke_early   -background office -exhaleAt 6.8
+run smoke_late    -background office -exhaleAt 5.4
+run smoke_debug   -background plain  -exhaleAt 6.0 -smokeDebug 1
+run smoke_street  -background street -streetTime day -exhaleAt 6.2
+run smoke_parts   -background office -exhaleAt 6.8 -bakedSmoke 0
+run celebrating   -background ops    -testState celebrating -stateAt 6.5 -bubble "all 42 tests passed, shipping it"
 run sleep_dim     -background street -streetTime dusk -reaction sleep -reactAt 5
-run smoke_parts   -background lounge -exhaleAt 7.0 -bakedSmoke 0
 
 xcrun simctl terminate "$UDID" "$BID" 2>/dev/null
 sleep 2; kill $LOGPID 2>/dev/null
@@ -59,16 +61,18 @@ ls -la "$OUT/shots"
 
 # ---- assertions ----
 fail=0
-PAT='MTLLibraryErrorDomain|program_source:[0-9]+:[0-9]+: error|failed compiling shader|failed to compile|Compiler error|shader modifier|SCNShaderModifier|\[SceneKit\] Error'
+PAT='MTLLibraryErrorDomain|program_source:[0-9]+:[0-9]+: error|failed compiling shader|failed to compile|Compiler error|SCNShaderModifier|SceneKit\] Error'
 if grep -hiE "$PAT" "$OUT"/logs/*.txt "$OUT"/logs/*.out "$OUT"/logs/*.err 2>/dev/null | grep -v "^== " | head -40 | tee "$OUT/logs/shader_errors.txt" | grep -q .; then
   echo "::error::SceneKit/Metal shader errors (see logs/shader_errors.txt)"; cat "$OUT/logs/shader_errors.txt"; fail=1
 fi
-for f in "$OUT"/logs/*.out; do
-  n=$(basename "$f" .out)
+for f in "$OUT"/logs/*.err; do        # the app logs to stderr in test mode (unbuffered)
+  n=$(basename "$f" .err)
   grep -q "TEST MODE (scene loaded" "$f" || { echo "::error::$n: scene never loaded"; fail=1; }
 done
-grep -h "baked smoke" "$OUT"/logs/smoke_early.out | head -5
-grep -q "baked smoke: ready" "$OUT/logs/smoke_early.out" || { echo "::error::baked smoke atlases did not load"; fail=1; }
-grep -q "baked exhale at" "$OUT/logs/smoke_early.out" || { echo "::error::no baked exhale in smoke_early"; fail=1; }
-echo "--- app log excerpt (smoke_early) ---"; head -60 "$OUT/logs/smoke_early.out"
+grep -h "baked smoke" "$OUT"/logs/smoke_early.err | head -5
+grep -q "baked smoke: ready" "$OUT/logs/smoke_early.err" || { echo "::error::baked smoke atlases did not load"; fail=1; }
+grep -q "baked exhale at" "$OUT/logs/smoke_early.err" || { echo "::error::no baked exhale in smoke_early"; fail=1; }
+echo "--- SceneKit error lines (all, deduplicated) ---"
+grep -h "SceneKit\]" "$OUT/logs/oslog.txt" | sed 's/^.*\] //' | sort | uniq -c | sort -rn | head -20
+echo "--- app log excerpt (smoke_early) ---"; head -60 "$OUT/logs/smoke_early.err"
 exit $fail

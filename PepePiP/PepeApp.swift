@@ -87,7 +87,7 @@ enum Log {
     static var onChange: (() -> Void)?
     static func add(_ s: String) {
         let line = "\(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)) \(s)"
-        print(line)
+        if TestMode.on { fputs(line + "\n", stderr) } else { print(line) }   // stderr is unbuffered: the sim test kills the app
         DispatchQueue.main.async {
             lines.append(line); if lines.count > 200 { lines.removeFirst(lines.count - 200) }
             onChange?()

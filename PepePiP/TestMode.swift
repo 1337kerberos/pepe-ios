@@ -3,7 +3,7 @@
 //   (those three are plain UserDefaults keys: the argument domain overrides the saved settings for this launch)
 //   -testState working|thinking|celebrating|failing|smoking   -stateAt <s since launch, default 2>
 //   -exhaleAt <s>      play the smoke_exhale take from 4.25 s in: the exhale (baked cards or particles) fires at once
-//   -reaction squash|stumble|sleep|wake   -reactAt <s>      -bubble <text>
+//   -reaction squash|stumble|sleep|wake   -reactAt <s>      -bubble <text>      -smokeDebug 1 (cards drawn as UV + alpha)
 // The brain is never dialled (no Bonjour, no WebSocket), the launch exhale is off, so every run is deterministic.
 import Foundation
 import QuartzCore
@@ -59,5 +59,6 @@ enum TestMode {
             }
         }
         if let b = value("bubble") { at(1, "bubble") { model.setBubble(b, hold: 30) } }
+        if value("smokeDebug") == "1" { model.scene.setSmokeDebug(true) }
     }
 }

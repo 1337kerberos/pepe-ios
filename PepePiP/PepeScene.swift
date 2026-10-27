@@ -106,8 +106,9 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         measureCharacter()
         addCameraAndLights()
         addBackdrop()
-        bubbleNode.position = SCNVector3(0, 2.02, 0.15); bubbleNode.isHidden = true; scene.rootNode.addChildNode(bubbleNode)
-        statusNode.position = SCNVector3(0, 0.42, 0.9); scene.rootNode.addChildNode(statusNode)
+        bubbleNode.isHidden = true; scene.rootNode.addChildNode(bubbleNode)      // placed by layoutToCharacter()
+        scene.rootNode.addChildNode(statusNode)
+        layoutToCharacter()
         setupCigar()
         let office = OpsOffice(); office.root.isHidden = true; scene.rootNode.addChildNode(office.root); ops = office
         let st = StreetSet(); st.root.isHidden = true; scene.rootNode.addChildNode(st.root); street = st
@@ -218,7 +219,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         }
         backdrop?.isHidden = tex == nil
         if let m = backdrop?.geometry?.firstMaterial { m.diffuse.contents = tex ?? UIColor.darkGray; m.diffuse.intensity = CGFloat(dim); m.multiply.contents = nil }
-        floorNode?.isHidden = bg == .plain
+        floorNode?.isHidden = bg == .plain || bg == .street   // its square edge shows on the bright pavement
         blobs.forEach { $0.0.isHidden = bg != .neon }
         if bg == .street { source = "procedural street, \(street?.period.rawValue ?? "?")" }
         Log.add("background \(bg.rawValue): \(source)\(tex.map { " \(Int($0.size.width))x\(Int($0.size.height))" } ?? "")")
@@ -240,6 +241,8 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         }
         baked.setLights(out)
     }
+
+    func setSmokeDebug(_ on: Bool) { baked?.debug = on }
 
     /// Settings > Look > Smoke: baked cards (default) or the 0.3 particles; brightness scales the smoke's light terms
     func setBakedSmoke(on: Bool, brightness: Float, flipV: Bool) {
@@ -331,7 +334,21 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
             for w in workers.values { w.root.simdPosition = ops.root.simdPosition + ops.workerSlots[w.slot] }
         }
         street?.root.simdPosition = simd_float3(0, bbox.min.y, 0)          // pavement top under his feet; he walks in place at the origin
+        layoutToCharacter()
         Log.add(String(format: "backdrop: %.1fx%.1f m at (%.2f, %.2f, %.2f), %.1f m from the camera; look-at (%.2f, %.2f, %.2f)", w, h, cx, cy, camTarget.z - back, dist, camTarget.x, camTarget.y, camTarget.z))
+    }
+
+    /// Everything sized for a 1.75 m man is scaled by k = character height / 1.75 (the glb's Pepe is 1.0 m tall, found
+    /// by the 0.13.2 simulator screenshots): the street set, the smoke's head radius, and the two label planes. The status
+    /// line sits at his feet, the bubble is a subtitle over his legs (above the head there is only ~9 % of the card).
+    private func layoutToCharacter() {
+        let h = max(0.3, bbox.max.y - bbox.min.y), k = h / 1.75
+        street?.setScale(k)
+        baked?.headR = 0.13 * k
+        statusNode.scale = SCNVector3(k, k, k)
+        statusNode.position = SCNVector3((bbox.min.x + bbox.max.x) / 2, bbox.min.y + 0.07 * h, 0.3 * k)
+        bubbleNode.scale = SCNVector3(k, k, k)
+        bubbleNode.position = SCNVector3((bbox.min.x + bbox.max.x) / 2, bbox.min.y + 0.3 * h, 0.4 * k)
     }
 
     /// Absolute function of time (no accumulating actions): orbit of +-2 deg around the target, 8 s period.
