@@ -3,13 +3,13 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.7 embedded-backdrops" }
+enum BuildInfo { static let tag = "0.8 ops-center" }
 
 enum Background: String, CaseIterable, Identifiable {
-    case lounge, office, neon, plain
+    case ops, lounge, office, neon, plain
     var id: String { rawValue }
     var label: String {
-        switch self { case .lounge: return "lounge (warm room, spot + rim)"; case .office: return "office (window, desk)"; case .neon: return "neon (drifting glow)"; case .plain: return "plain" }
+        switch self { case .ops: return "ops center (office, co-workers)"; case .lounge: return "lounge (warm room, spot + rim)"; case .office: return "office (window, desk)"; case .neon: return "neon (drifting glow)"; case .plain: return "plain" }
     }
 }
 
@@ -26,6 +26,17 @@ enum CardSize: String, CaseIterable, Identifiable {
     }
 }
 
+struct BrainProfile: Codable, Identifiable, Equatable {
+    let id: String
+    var name: String
+    var host: String
+    var port: Int
+    var builtIn: Bool
+    var url: String { "ws://\(host):\(port)" }
+    static let builtIns = [BrainProfile(id: "wifi", name: "Wi-Fi", host: "192.168.110.204", port: 8777, builtIn: true),
+                           BrainProfile(id: "tailscale", name: "Tailscale", host: "100.69.18.56", port: 8777, builtIn: true)]
+}
+
 struct Card: Identifiable, Equatable {
     let id = UUID()
     let kind: String   // say | ask | result | tool | status
@@ -36,16 +47,28 @@ final class PepeModel: ObservableObject {
     static let shared = PepeModel()
 
     // settings (UserDefaults-backed)
-    @Published var host: String { didSet { UserDefaults.standard.set(host, forKey: "host") } }
-    @Published var port: Int { didSet { UserDefaults.standard.set(port, forKey: "port") } }
+    /// Brain profiles: two built-ins (always present) + user-added ones, persisted as JSON; the selection is persisted too.
+    @Published var profiles: [BrainProfile] { didSet { saveProfiles() } }
+    @Published var selectedProfileId: String { didSet { UserDefaults.standard.set(selectedProfileId, forKey: "selectedProfile"); connect() } }
+    var selectedProfile: BrainProfile { profiles.first { $0.id == selectedProfileId } ?? BrainProfile.builtIns[0] }
+    var host: String { selectedProfile.host }
+    var port: Int { selectedProfile.port }
     @Published var pipMode: PiPMode { didSet { UserDefaults.standard.set(pipMode.rawValue, forKey: "pipMode") } }
     @Published var autoPiP: Bool { didSet { UserDefaults.standard.set(autoPiP, forKey: "autoPiP") } }
     @Published var liveActivity: Bool { didSet { UserDefaults.standard.set(liveActivity, forKey: "liveActivity") } }
+    @Published var useDiscovered: Bool { didSet { UserDefaults.standard.set(useDiscovered, forKey: "useDiscovered"); connect() } }
+    @Published var discovered: (host: String, port: Int)? = nil
+    static let defaultPort = 8777
+    private let discovery = BrainDiscovery()
     @Published var cardSize: CardSize { didSet { UserDefaults.standard.set(cardSize.rawValue, forKey: "cardSize") } }
     @Published var brightness: Double { didSet { UserDefaults.standard.set(brightness, forKey: "brightness"); scene.setBrightness(brightness) } }
     @Published var cigarOn: Bool { didSet { UserDefaults.standard.set(cigarOn, forKey: "cigarOn"); scene.setCigar(on: cigarOn) } }
     @Published var pepeScale: Double { didSet { UserDefaults.standard.set(pepeScale, forKey: "pepeScale"); scene.setFraming(scale: Float(pepeScale)) } }
     @Published var background: Background { didSet { UserDefaults.standard.set(background.rawValue, forKey: "background"); scene.setBackground(background) } }
+    @Published var showWorkers: Bool { didSet { UserDefaults.standard.set(showWorkers, forKey: "showWorkers"); scene.setWorkers(agents, enabled: showWorkers) } }
+    /// Claude Code sessions on the laptop (from hello.agents and {"type":"agents"}); the brain's own session is the main Pepe
+    @Published var agents: [AgentInfo] = [] { didSet { if sceneLoaded { scene.setWorkers(agents, enabled: showWorkers) } } }
+    private var pruneTimer: Timer?
 
     /// shown in Settings so builds can be told apart (bump BuildInfo.tag with every change you want to recognise)
     static let versionLine: String = {
@@ -72,15 +95,20 @@ final class PepeModel: ObservableObject {
 
     private init() {
         let d = UserDefaults.standard
-        host = d.string(forKey: "host") ?? "100.64.0.1"          // placeholder: your Linux box's Tailscale IP
-        port = d.integer(forKey: "port") == 0 ? 8777 : d.integer(forKey: "port")
+        var list = BrainProfile.builtIns
+        if let data = d.data(forKey: "profiles"), let user = try? JSONDecoder().decode([BrainProfile].self, from: data) { list += user.filter { !$0.builtIn } }
+        profiles = list
+        selectedProfileId = d.string(forKey: "selectedProfile") ?? BrainProfile.builtIns[0].id
+        if !list.contains(where: { $0.id == selectedProfileId }) { selectedProfileId = BrainProfile.builtIns[0].id }
+        useDiscovered = d.object(forKey: "useDiscovered") as? Bool ?? true
         pipMode = PiPMode(rawValue: d.string(forKey: "pipMode") ?? "") ?? .auto
         autoPiP = d.object(forKey: "autoPiP") as? Bool ?? true
         liveActivity = d.object(forKey: "liveActivity") as? Bool ?? false
         cardSize = CardSize(rawValue: d.string(forKey: "cardSize") ?? "") ?? .threeFour
         brightness = d.object(forKey: "brightness") as? Double ?? 1.4
         cigarOn = d.object(forKey: "cigarOn") as? Bool ?? true
-        background = Background(rawValue: d.string(forKey: "background") ?? "") ?? .lounge
+        background = Background(rawValue: d.string(forKey: "background") ?? "") ?? .ops
+        showWorkers = d.object(forKey: "showWorkers") as? Bool ?? true
         pepeScale = d.object(forKey: "pepeScale") as? Double ?? 1.0
         director = Director(model: self)
         Log.add(PepeModel.versionLine)
@@ -91,6 +119,8 @@ final class PepeModel: ObservableObject {
             else {
                 self.scene.setBackground(self.background); self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn); self.scene.setFraming(scale: Float(self.pepeScale))
                 self.sceneLoaded = true; self.director.handle(["type": "state", "state": "idle"])
+                self.scene.setWorkers(self.agents, enabled: self.showWorkers)
+                self.pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.scene.pruneWorkers() }
                 // first-time users see the smoke once, 8 s after launch
                 DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
                     guard let self, self.cigarOn else { return }
@@ -98,13 +128,46 @@ final class PepeModel: ObservableObject {
                 }
             }
         }
+        discovery.onFound = { [weak self] h, p in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let changed = self.discovered?.host != h || self.discovered?.port != p
+                self.discovered = (h, p)
+                if self.useDiscovered, changed { self.connect() }
+            }
+        }
+        discovery.start()
         connect()
+    }
+
+    /// what we actually dial: the Bonjour-discovered brain when allowed and seen, else the selected profile
+    var effectiveHost: (host: String, port: Int, source: String) {
+        if useDiscovered, let d = discovered { return (d.host, d.port, "discovered") }
+        return (host, port, "profile \(selectedProfile.name)")
+    }
+
+    private func saveProfiles() {
+        if let data = try? JSONEncoder().encode(profiles.filter { !$0.builtIn }) { UserDefaults.standard.set(data, forKey: "profiles") }
+    }
+
+    func addProfile(name: String, host: String, port: Int) {
+        let n = name.trimmingCharacters(in: .whitespaces), h = host.trimmingCharacters(in: .whitespaces)
+        guard !h.isEmpty else { return }
+        let p = BrainProfile(id: UUID().uuidString, name: n.isEmpty ? h : n, host: h, port: port, builtIn: false)
+        profiles.append(p); selectedProfileId = p.id
+    }
+
+    func deleteProfiles(at offsets: IndexSet) {
+        let doomed = offsets.map { profiles[$0] }.filter { !$0.builtIn }
+        profiles.removeAll { p in doomed.contains { $0.id == p.id } }
+        if doomed.contains(where: { $0.id == selectedProfileId }) { selectedProfileId = BrainProfile.builtIns[0].id }
     }
 
     // MARK: brain
     func connect() {
         client?.close()
-        guard let url = URL(string: "ws://\(host):\(port)") else { status = "bad host"; return }
+        let e = effectiveHost
+        guard let url = URL(string: "ws://\(e.host):\(e.port)") else { status = "bad host"; return }
         let c = BrainClient(url: url)
         c.onConnection = { [weak self] up in
             DispatchQueue.main.async {
@@ -116,7 +179,9 @@ final class PepeModel: ObservableObject {
         }
         c.onEvent = { [weak self] ev in DispatchQueue.main.async { self?.director.handle(ev) } }
         client = c; c.connect()
-        status = "connecting to \(host):\(port)"
+        status = "connecting to \(e.host):\(e.port) (\(e.source))"
+        scene.setStatus(status)
+        Log.add("connect ws://\(e.host):\(e.port) (\(e.source))")
     }
 
     /// Brain time (unix seconds) on the phone's clock; equals Date() when no hello carried a clock.

@@ -51,8 +51,11 @@ final class Director {
         guard let type = ev["type"] as? String else { return }
         let text = (ev["text"] as? String) ?? ""
         switch type {
+        case "agents":
+            model.agents = ((ev["list"] as? [[String: Any]]) ?? []).compactMap(AgentInfo.init)
         case "hello":
             model.brainBusy = (ev["busy"] as? Bool) ?? false
+            if let list = ev["agents"] as? [[String: Any]] { model.agents = list.compactMap(AgentInfo.init) }
             model.synced = (ev["sync"] as? Bool) ?? false && ev["clock"] != nil
             if model.synced { idleTimer?.invalidate(); smokeTimer?.invalidate() }
             oneShot(.wave, hold: 2.2)

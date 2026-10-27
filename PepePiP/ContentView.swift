@@ -46,17 +46,41 @@ struct ContentView: View {
 struct SettingsView: View {
     @EnvironmentObject var model: PepeModel
     @Environment(\.dismiss) private var dismiss
-    @State private var host = ""
-    @State private var port = ""
+    @State private var newName = ""
+    @State private var newHost = ""
+    @State private var newPort = "8777"
+    @State private var adding = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Brain (ws://host:port, Tailscale IP of the Linux box)") {
-                    TextField("100.x.y.z", text: $host).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
-                    TextField("8777", text: $port).keyboardType(.numberPad)
-                    Button("Reconnect") { model.host = host.trimmingCharacters(in: .whitespaces); model.port = Int(port) ?? 8777; model.connect() }
-                }
+                Section {
+                    ForEach(model.profiles) { p in
+                        HStack {
+                            VStack(alignment: .leading) { Text(p.name).font(.body); Text(p.url).font(.footnote.monospaced()).foregroundStyle(.secondary) }
+                            Spacer()
+                            if p.id == model.selectedProfileId { Image(systemName: "checkmark").foregroundStyle(.blue) }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { if model.selectedProfileId == p.id { model.connect() } else { model.selectedProfileId = p.id } }
+                        .deleteDisabled(p.builtIn)
+                    }
+                    .onDelete { model.deleteProfiles(at: $0) }
+                    if adding {
+                        TextField("name", text: $newName)
+                        TextField("host (192.168.x.y)", text: $newHost).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
+                        TextField("port", text: $newPort).keyboardType(.numberPad)
+                        HStack {
+                            Button("Add") { model.addProfile(name: newName, host: newHost, port: Int(newPort) ?? PepeModel.defaultPort); adding = false; newName = ""; newHost = "" }.disabled(newHost.trimmingCharacters(in: .whitespaces).isEmpty)
+                            Button("Cancel") { adding = false }
+                        }
+                    } else {
+                        Button { adding = true } label: { Label("Add profile", systemImage: "plus") }
+                    }
+                    Toggle("Use discovered brain (Bonjour _pepe._tcp)", isOn: $model.useDiscovered)
+                    Text(model.discovered.map { "discovered: \($0.host):\($0.port)" } ?? "no brain discovered on this network yet").font(.footnote).foregroundStyle(.secondary)
+                    Text("dialing \(model.effectiveHost.host):\(model.effectiveHost.port) (\(model.effectiveHost.source))").font(.footnote).foregroundStyle(.secondary)
+                } header: { Text("Brain") } footer: { Text("Tap a profile to select it (tap again to reconnect); swipe to delete your own. Built-ins stay. A discovered brain overrides the selection while the toggle is on.") }
                 Section("Picture in Picture") {
                     Picker("Path", selection: $model.pipMode) { ForEach(PiPMode.allCases) { Text($0.label).tag($0) } }
                     Picker("Card", selection: $model.cardSize) { ForEach(CardSize.allCases) { Text($0.label).tag($0) } }
@@ -69,6 +93,7 @@ struct SettingsView: View {
                     HStack { Text("Brightness"); Slider(value: $model.brightness, in: 0.5...2.0, step: 0.05); Text(String(format: "%.2f", model.brightness)).monospacedDigit().frame(width: 44) }
                     HStack { Text("Pepe scale"); Slider(value: $model.pepeScale, in: 0.6...1.2, step: 0.05); Text(String(format: "%.2f", model.pepeScale)).monospacedDigit().frame(width: 44) }
                     Toggle("Cigar (idle smoke every 45-120 s)", isOn: $model.cigarOn)
+                    Toggle("Show co-workers (\(model.agents.count) agent\(model.agents.count == 1 ? "" : "s") reported)", isOn: $model.showWorkers)
                     Button("Exhale now") { model.director.smokeNow() }.disabled(!model.sceneLoaded)
                 }
                 Section("Build") { Text(PepeModel.versionLine).font(.footnote.monospaced()) }
@@ -79,7 +104,6 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .toolbar { Button("Done") { dismiss() } }
-            .onAppear { host = model.host; port = String(model.port) }
         }
     }
 }

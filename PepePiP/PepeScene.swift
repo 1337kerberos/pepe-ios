@@ -35,6 +35,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     private static let camDriftPeriod: Float = 8
     private static let backdropSize: CGFloat = 9
     private static let backdropZ: Float = 2.6
+    private static let backdropZOps: Float = 4.6
     private let bubbleNode = TextPlane(width: 1.25, height: 0.42, pixels: CGSize(width: 750, height: 252), font: 34, color: .black, bg: UIColor(white: 1, alpha: 0.95))
     private let statusNode = TextPlane(width: 1.5, height: 0.14, pixels: CGSize(width: 900, height: 84), font: 36, color: .white, bg: UIColor(white: 0, alpha: 0.45))
     // clips are pre-faced +Z (make_clips_boss.py), so the camera sits on the +Z side
@@ -46,10 +47,18 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     private var wisp: SCNParticleSystem?
     private var cigarOn = true
     private var exhaleCount = 0
+    private var ops: OpsOffice?
+    private var workers: [String: Worker] = [:]
+    private var showWorkers = true
+    private var glbURL: URL?
+    private var characterRoot: SCNNode?          // the main glb's container (for material sharing with workers)
+    private var spawning = 0
+    static let maxWorkers = 4
 
     func load(completion: @escaping (Error?) -> Void) {
         AppResources.report()
-        guard let url = AppResources.url("pepe.glb") else {
+        glbURL = AppResources.url("pepe.glb")
+        guard let url = glbURL else {
             completion(NSError(domain: "pepe", code: 1, userInfo: [NSLocalizedDescriptionKey: "pepe.glb not found next to the app (see the log)"])); return
         }
         // README snippet of GLTFKit2: GLTFAsset.load(with:options:) { progress, status, asset, error, stop in ... }
@@ -82,14 +91,27 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
             players[anim.name] = p
         }
         Log.add("glb: \(players.count) clips: \(players.keys.sorted().joined(separator: " "))")
+        characterRoot = scene.rootNode
         measureCharacter()
         addCameraAndLights()
         addBackdrop()
         bubbleNode.position = SCNVector3(0, 2.02, 0.15); bubbleNode.isHidden = true; scene.rootNode.addChildNode(bubbleNode)
         statusNode.position = SCNVector3(0, 0.42, 0.9); scene.rootNode.addChildNode(statusNode)
         setupCigar()
+        let office = OpsOffice(); office.root.isHidden = true; scene.rootNode.addChildNode(office.root); ops = office
         setBackground(background)
         setStatus("ready")
+        Log.add("triangles: character \(triangles(in: characterRoot, excluding: office.root)), office \(triangles(in: office.root, excluding: nil))")
+    }
+
+    private func triangles(in node: SCNNode?, excluding: SCNNode?) -> Int {
+        guard let node else { return 0 }
+        var n = 0
+        node.enumerateHierarchy { child, stop in
+            if child === excluding { stop.pointee = true; return }
+            if let g = child.geometry { n += g.elements.reduce(0) { $0 + $1.primitiveCount } }
+        }
+        return n
     }
 
     // MARK: camera, lights, backdrop
@@ -112,8 +134,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     }
 
     private func addBackdrop() {
-        // 9 m square, 2.6 m behind the character: at the bbox camera distance (~3.2 m, 36 deg vertical FOV) the card sees
-        // ~3.7 m of it, so it covers every aspect and every "Pepe scale" (coverage is logged by setBackground)
+        // sized and placed by fitBackdrop() from the camera frustum at its depth (initial size is a placeholder)
         let plane = SCNPlane(width: PepeScene.backdropSize, height: PepeScene.backdropSize)
         let m = SCNMaterial(); m.lightingModel = .constant; m.isDoubleSided = true
         m.diffuse.intensity = 1; m.multiply.contents = nil; m.diffuse.wrapS = .clamp; m.diffuse.wrapT = .clamp
@@ -155,7 +176,10 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         case .office: preset = L(key: (1150, c(0.95, 0.97, 1.0)), fill: (500, c(0.85, 0.9, 1.0)), rim: (500, c(1.0, 1.0, 1.0)), amb: (450, c(0.82, 0.87, 0.96)))
         case .neon:   preset = L(key: (1150, c(0.85, 1.0, 0.9)), fill: (450, c(0.9, 0.75, 1.0)), rim: (900, c(0.8, 0.6, 1.0)), amb: (350, c(0.9, 0.85, 1.0)))
         case .plain:  preset = L(key: (1200, c(1.0, 0.96, 0.9)), fill: (400, c(0.8, 0.87, 1.0)), rim: (600, c(0.95, 0.95, 1.0)), amb: (350, .white))
+        case .ops:    preset = L(key: (1200, c(0.92, 0.95, 1.0)), fill: (400, c(0.8, 0.87, 1.0)), rim: (650, c(0.7, 0.8, 1.0)), amb: (260, c(0.85, 0.9, 1.0)))
         }
+        ops?.root.isHidden = bg != .ops
+        fitBackdrop()   // the wall sits behind the far desks in ops, closer otherwise
         for (l, p) in [(keyLight, preset.key), (fillLight, preset.fill), (rimLight, preset.rim), (ambLight, preset.amb)] {
             l.color = p.1; l.intensity = p.0 * CGFloat(brightness)
         }
@@ -163,17 +187,14 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         // near-black on device); the CG drawing stays as the fallback if a decode ever fails
         var tex: UIImage? = nil; var source = "none"
         if bg != .plain {
-            if let e = EmbeddedBackdrops.image(bg.rawValue) { tex = e; source = "embedded jpeg" }
+            if let e = EmbeddedBackdrops.image(bg == .ops ? "office" : bg.rawValue) { tex = e; source = "embedded jpeg" }
             else { switch bg { case .lounge: tex = Backdrops.lounge; case .office: tex = Backdrops.office; default: tex = Backdrops.neon }; source = "CG fallback (embedded decode failed)" }
         }
         backdrop?.isHidden = tex == nil
         if let m = backdrop?.geometry?.firstMaterial { m.diffuse.contents = tex ?? UIColor.darkGray; m.diffuse.intensity = 1; m.multiply.contents = nil }
         floorNode?.isHidden = bg == .plain
         blobs.forEach { $0.0.isHidden = bg != .neon }
-        // projected coverage: half-size of the plane over its distance to the camera, vs the view's tan(FOV/2) (1.0 = exactly fills the height)
-        let planeDist = camDistance * cosf(PepeScene.camBaseYaw) + PepeScene.backdropZ
-        let coverage = (Float(PepeScene.backdropSize) / 2 / planeDist) / tanf(36 * .pi / 180 / 2)
-        Log.add("background \(bg.rawValue): \(source)\(tex.map { " \(Int($0.size.width))x\(Int($0.size.height))" } ?? ""), plane \(PepeScene.backdropSize) m at \(String(format: "%.1f", planeDist)) m -> covers \(String(format: "%.2f", coverage))x the card height (needs > 1 / aspect for width)")
+        Log.add("background \(bg.rawValue): \(source)\(tex.map { " \(Int($0.size.width))x\(Int($0.size.height))" } ?? "")")
     }
 
     /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity (re-applies the current preset).
@@ -209,6 +230,30 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         camTarget = simd_float3(centre.x, centre.y * 0.95, centre.z)
         placeCamera(time: CACurrentMediaTime())
         Log.add("camera: aspect \(camAspect) scale \(pepeScale) target \(camTarget) distance \(camDistance) position \(cameraNodeRef?.simdPosition ?? .zero)")
+        fitBackdrop()
+    }
+
+    /// Size and place the backdrop plane (and the office) from the camera frustum at their depth, so the texture's
+    /// spotlight/window are in view whatever the aspect, scale or character size: height = 2 * dist * tan(fov/2) * 1.15,
+    /// width = height * max(aspect, 1) * 1.15, centred where the camera's line of sight meets the plane.
+    private func fitBackdrop() {
+        let tanHalf = tanf(36 * .pi / 180 / 2)
+        let back = background == .ops ? PepeScene.backdropZOps : PepeScene.backdropZ
+        let dist = camDistance * cosf(PepeScene.camBaseYaw) + back
+        let h = 2 * dist * tanHalf * 1.15
+        let w = h * max(camAspect, 1) * 1.15
+        let cx = camTarget.x - tanf(PepeScene.camBaseYaw) * back            // the line of sight continues past the target
+        let cy = camTarget.y - 0.08 * camDistance * (back / max(0.1, camDistance * cosf(PepeScene.camBaseYaw)))   // slight downward look
+        if let plane = backdrop?.geometry as? SCNPlane { plane.width = CGFloat(w); plane.height = CGFloat(h) }
+        backdrop?.simdPosition = simd_float3(cx, cy, camTarget.z - back)
+        if let ops {
+            let deskDepth: Float = 2.3
+            let halfW = (camDistance * cosf(PepeScene.camBaseYaw) + deskDepth) * tanHalf * camAspect
+            ops.layout(spread: min(1.5, max(0.75, halfW / 1.29)))            // 1.29 m = half-width of the 3:4 card at the desks
+            ops.root.simdPosition = simd_float3(camTarget.x - tanf(PepeScene.camBaseYaw) * deskDepth, bbox.min.y, camTarget.z)
+            for w in workers.values { w.root.simdPosition = ops.root.simdPosition + ops.workerSlots[w.slot] }
+        }
+        Log.add(String(format: "backdrop: %.1fx%.1f m at (%.2f, %.2f, %.2f), %.1f m from the camera; look-at (%.2f, %.2f, %.2f)", w, h, cx, cy, camTarget.z - back, dist, camTarget.x, camTarget.y, camTarget.z))
     }
 
     /// Absolute function of time (no accumulating actions): orbit of +-2 deg around the target, 8 s period.
@@ -222,6 +267,52 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         for (node, base, period, phase) in blobs where !node.isHidden {
             node.simdPosition = base + simd_float3(0.9 * sinf(2 * .pi * t / period + phase), 0.5 * sinf(2 * .pi * t / (period * 0.7) + phase), 0)
         }
+        if let ops, !ops.root.isHidden { ops.tick(time: time) }
+    }
+
+    // MARK: co-workers (one per agent session the brain reports; capped)
+    func setWorkers(_ agents: [AgentInfo], enabled: Bool) {
+        showWorkers = enabled
+        let wanted = enabled ? Array(agents.prefix(PepeScene.maxWorkers)) : []
+        let wantedIds = Set(wanted.map { $0.id })
+        for (id, w) in workers where !wantedIds.contains(id) { remove(worker: w); workers[id] = nil }
+        for a in wanted {
+            if let w = workers[a.id] {
+                w.lastSeen = Date()
+                if w.info.state != a.state { w.info = a; w.apply(state: a.state) } else { w.info = a }
+                w.setLabel()
+            } else if let url = glbURL, let main = characterRoot, let slot = freeSlot() {
+                let w = Worker(info: a, slot: slot); workers[a.id] = w; spawning += 1
+                w.root.simdPosition = (ops.map { $0.root.simdPosition + $0.workerSlots[slot] }) ?? simd_float3(Float(slot) * 1.2 - 1.8, 0, -2.3); w.root.scale = SCNVector3(0.9, 0.9, 0.9)
+                scene.rootNode.addChildNode(w.root)
+                ops?.chairs[slot].isHidden = true
+                Log.add("agent joined: \(a.id) (\(a.state)) -> desk \(slot)")
+                w.load(url: url, shareMaterialsFrom: main) { [weak self, weak w] ok in
+                    guard let self, let w else { return }
+                    self.spawning -= 1
+                    guard ok, self.workers[w.id] === w else { return }
+                    w.apply(state: w.info.state)
+                    w.root.runAction(.fadeIn(duration: 0.8))
+                    Log.add("triangles now: \(self.triangles(in: self.scene.rootNode, excluding: nil)) (\(self.workers.count) workers)")
+                }
+            }
+        }
+    }
+
+    private func freeSlot() -> Int? {
+        let used = Set(workers.values.map { $0.slot })
+        return (0..<PepeScene.maxWorkers).first { !used.contains($0) }
+    }
+
+    private func remove(worker w: Worker) {
+        Log.add("agent left: \(w.id)")
+        ops?.chairs[w.slot].isHidden = false
+        w.root.runAction(.sequence([.fadeOut(duration: 0.6), .removeFromParentNode()]))
+    }
+
+    /// drop workers the brain stopped mentioning (belt and braces; the brain already prunes after 10 min)
+    func pruneWorkers(olderThan seconds: TimeInterval = 600) {
+        for (id, w) in workers where Date().timeIntervalSince(w.lastSeen) > seconds { remove(worker: w); workers[id] = nil }
     }
 
     // SCNSceneRendererDelegate: every renderer (SCNView, MTKView's SCNRenderer, the pixel-buffer feeder) calls this on

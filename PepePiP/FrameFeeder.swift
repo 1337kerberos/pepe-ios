@@ -67,6 +67,7 @@ final class PixelBufferFeeder {
     private weak var layer: AVSampleBufferDisplayLayer?
     var fps: Int = 30
     private(set) var frames = 0
+    private var renderAccum: Double = 0
 
     init(size: CGSize = CGSize(width: 540, height: 720)) {
         self.size = size
@@ -109,9 +110,12 @@ final class PixelBufferFeeder {
         pass.colorAttachments[0].clearColor = PepeScene.metalClearColor
         pass.depthAttachment.texture = depth; pass.depthAttachment.loadAction = .clear; pass.depthAttachment.storeAction = .dontCare; pass.depthAttachment.clearDepth = 1
         renderer.pointOfView = scene.rootNode.childNode(withName: "pepeCamera", recursively: false)
-        renderer.render(atTime: CACurrentMediaTime(), viewport: CGRect(origin: .zero, size: size), commandBuffer: cmd, passDescriptor: pass)
+        let t0 = CACurrentMediaTime()
+        renderer.render(atTime: t0, viewport: CGRect(origin: .zero, size: size), commandBuffer: cmd, passDescriptor: pass)
         cmd.commit()
         cmd.waitUntilCompleted()
+        renderAccum += CACurrentMediaTime() - t0
+        if frames == 150 || frames == 1500 { Log.add(String(format: "feeder: %.1f ms per frame (render + GPU wait, avg over %d frames)", renderAccum / Double(frames) * 1000, frames)) }
         if cmd.status == .error { Log.add("metal cmd error: \(String(describing: cmd.error))"); return }
         guard let sb = makeSampleBuffer(pixelBuffer) else { return }
         if layer.sampleBufferRenderer.status == .failed { layer.sampleBufferRenderer.flush() }

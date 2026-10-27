@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.7</string>
+	<string>0.8</string>
 	<key>CFBundleVersion</key>
-	<string>7</string>
+	<string>8</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>
@@ -53,5 +53,9 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Pepe connects to the agent brain on your computer.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_pepe._tcp</string>
+	</array>
 </dict>
 </plist>

@@ -27,6 +27,8 @@ ios/
     Director.swift                  brain events -> clip (idle/think/typing/explain/celebrate/fail...), status line, bubble, cards
     AppResources.swift              loose-file lookup that survives LiveContainer (Bundle(for:) / main / exe dir / argv0) + asset inventory log
     EmbeddedBackdrops.swift         the three backdrop JPEGs as base64 (made on the laptop by tools/bg; LiveContainer-proof)
+    BrainDiscovery.swift            Bonjour browse (_pepe._tcp) + resolve to IPv4 host:port
+    OpsOffice.swift                 ops-center furniture (desks, monitors, lamps, chairs) + Worker (co-worker Pepe: second glb load, own players, label)
     Backdrops.swift                 procedural textures (lounge/office/neon backdrops, floor shadow, glow, puff) drawn with Core Graphics
     PepeScene.swift                 SceneKit scene from pepe.glb (GLTFKit2), SCNAnimationPlayer crossfades, 3/4 camera,
                                     soft lights, bubble + status as textured planes inside the 3D frame (visible in PiP)
@@ -129,6 +131,33 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   decode fails) on a 9 m constant-lit plane 2.6 m behind Pepe with `diffuse.intensity = 1`, no multiply/emission. The
   floor shadow, glow and puff sprites stay procedural. The log prints each embedded image's size at scene setup and,
   per preset change, the source and the plane's projected coverage of the card height.
+- **0.8: ops center** (default background). `PepePiP/OpsOffice.swift` builds a dark office behind the main Pepe: a
+  14 m floor, four desks (two at z=-2.3 beside him, two further back at z=-3.5 so they peek in at wider aspects),
+  each with a flickering emissive monitor (driven from the per-frame hook, no actions), a warm omni desk lamp, a chair,
+  plus a cool overhead omni; the wall is the embedded office backdrop moved to z=-4.6. Main framing is untouched.
+  **Co-workers**: the brain sends `hello.agents` and `{"type":"agents","list":[{id,state,tool,cwd,age}]}`; the app keeps
+  `PepeModel.agents` and `PepeScene.setWorkers` spawns one extra Pepe per agent (cap 4): the glb is loaded a second time
+  per worker through GLTFKit2 (`Worker.load`; `SCNNode.clone()` of a skinned node shares the skeleton with the original,
+  so it was not used), its geometry nodes take the main model's `SCNMaterial`s so the 24 textures stay single on the
+  GPU, it gets its own `SCNAnimationPlayer`s, scale 0.9, stands behind a desk (the chair hides), fades in over 0.8 s,
+  carries a label `id · cwd` and plays working -> typing, thinking -> think, waiting -> look_around, done -> very_happy
+  then idle, idle -> a random idle, each with a random 0-3 s start offset. Workers vanish (fade-out) when the brain
+  stops listing them or after 10 min of silence. Settings > Look > "Show co-workers" (default on).
+  **Cost**: one Pepe is 33.8k triangles, the office ~2k; with 4 workers the scene is ~170k triangles (over the 120k
+  budget: lower `PepeScene.maxWorkers` to 2 if the feeder's per-frame log, printed after 150 and 1500 frames, climbs);
+  particles unchanged.
+- **0.8 also**: the backdrop plane is sized and placed from the camera frustum at its depth every time the framing
+  changes (`PepeScene.fitBackdrop`: height = 2 x distance x tan(18 deg) x 1.15, width = height x max(aspect, 1) x 1.15,
+  centred where the line of sight meets the plane), so the texture's spotlight/window are always in view; the ops office
+  is positioned at the look-at point with its desk spread scaled to the visible width at desk depth. The log prints the
+  plane rect and the look-at. **Brain profiles**: Settings > Brain lists named profiles, built-ins "Wi-Fi"
+  (`ws://192.168.110.204:8777`, selected by default) and "Tailscale" (`ws://100.69.18.56:8777`) always present, "Add
+  profile" (name/host/port) for your own, swipe to delete those, tap to select (tap again to reconnect); user profiles
+  and the selection persist in UserDefaults (`BrainProfile`, `PepeModel.profiles`). Plus zero-config
+  discovery: the brain advertises `_pepe._tcp`, `PepePiP/BrainDiscovery.swift` browses it with `NWBrowser`, resolves the
+  first service to an IPv4 host:port through a throwaway `NWConnection`, and the app dials it automatically while
+  "Use discovered brain" is on, overriding the selected profile (the status line says "discovered"). `NSBonjourServices` is in Info.plist. The
+  status line shows `connecting to host:port (discovered|manual)`.
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 
@@ -225,8 +254,8 @@ feeder frames, WebSocket state) so these can be diagnosed without a Mac.
 - Or run the brain bound to all interfaces: change the `websockets.serve(handle, "127.0.0.1", a.port)` line in
   `brain/pepe_brain.py` to `"0.0.0.0"` (Tailscale ACLs still gate who can reach it).
 
-Then in the app: Settings > host = the Linux box's Tailscale IP (`tailscale ip -4`, e.g. `100.x.y.z`), port 8777,
-Reconnect. The green dot = connected; Pepe waves on `hello`. Start the brain with
+Then in the app: Settings > Brain. With the brain advertising `_pepe._tcp` on the LAN the phone finds it by itself;
+otherwise select the Wi-Fi or Tailscale profile, or add one (`tailscale ip -4` gives the Linux box's address). The green dot = connected; Pepe waves on `hello`. Start the brain with
 `brain/.venv/bin/python brain/pepe_brain.py --cwd <dir>` and talk to it from the phone's chat box or any other body.
 
 ## Next steps
