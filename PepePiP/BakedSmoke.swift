@@ -203,7 +203,7 @@ final class BakedSmoke {
         let meta = side ? EmbeddedSmoke.sideMeta : EmbeddedSmoke.tipMeta
         let f: [String: Float] = ["ppsFrame": 0, "ppsCols": Float(cols), "ppsRows": Float(rows), "ppsFade": 1, "ppsErosion": 0, "ppsMaxAlpha": 0.85,
                                   "ppsConeOn": side ? 1 : 0, "ppsMouthU": Float(meta.mouthU), "ppsMouthV": Float(meta.mouthV),
-                                  "ppsSoften": side ? 1.2 : 0.3, "ppsAmbient": side ? 0.22 : 0.3, "ppsGain": side ? 0.3 : 0.2, "ppsFlipV": 0, "ppsDebug": 0]
+                                  "ppsSoften": side ? 1.2 : 0.3, "ppsAmbient": side ? 0.3 : 0.35, "ppsGain": side ? 0.4 : 0.25, "ppsFlipV": 0, "ppsDebug": 0]
         for (k, v) in f { m.setValue(NSNumber(value: v), forKey: k) }
         m.setValue(NSValue(scnVector3: SCNVector3(0.78, 0.8, 0.86)), forKey: "ppsTint")
         for k in ["ppsL0", "ppsL1"] { m.setValue(NSValue(scnVector3: SCNVector3(0, 1, 0)), forKey: k) }
@@ -294,7 +294,7 @@ final class BakedSmoke {
                     m.setValue(NSNumber(value: Float(f)), forKey: "ppsFrame")
                     m.setValue(NSNumber(value: Float(erosion)), forKey: "ppsErosion")
                     m.setValue(NSNumber(value: wSide * (i == 0 ? 1 : BakedSmoke.fanFade)), forKey: "ppsFade")
-                    m.setValue(NSNumber(value: 0.22 * brightness), forKey: "ppsAmbient")
+                    m.setValue(NSNumber(value: 0.3 * brightness), forKey: "ppsAmbient")   // 0.13.4: a touch lighter (dark on the day street in the sim)
                     lightUniforms(m, fwd: ax.fwd, up: ax.up, n: ax.n, flipZ: simd_dot(ax.n, camera - ax.centre) < 0)
                 }
             }
@@ -305,7 +305,7 @@ final class BakedSmoke {
             if show, let tip {
                 let frames = Double(EmbeddedSmoke.tipMeta.frames)
                 tm.setValue(NSNumber(value: Float(((now - tipT0) * BakedSmoke.fps).truncatingRemainder(dividingBy: frames))), forKey: "ppsFrame")
-                tm.setValue(NSNumber(value: 0.3 * brightness), forKey: "ppsAmbient")
+                tm.setValue(NSNumber(value: 0.35 * brightness), forKey: "ppsAmbient")
                 // Y-up billboard: the column rises straight up from the tip and turns toward the camera about Y
                 var nrm = camera - tip; nrm.y = 0
                 nrm = simd_length(nrm) > 1e-4 ? simd_normalize(nrm) : simd_float3(0, 0, 1)
