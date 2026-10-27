@@ -3,13 +3,13 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.13.5 sim-checked" }
+enum BuildInfo { static let tag = "0.14 nebula" }
 
 enum Background: String, CaseIterable, Identifiable {
-    case ops, street, lounge, office, neon, plain
+    case ops, street, nebula, lounge, office, neon, plain
     var id: String { rawValue }
     var label: String {
-        switch self { case .ops: return "ops center (office, co-workers)"; case .street: return "street (walks when idle, time of day)"; case .lounge: return "lounge (warm room, spot + rim)"; case .office: return "office (window, desk)"; case .neon: return "neon (drifting glow)"; case .plain: return "plain" }
+        switch self { case .ops: return "ops center (office, co-workers)"; case .street: return "street (walks when idle, time of day)"; case .nebula: return "nebula (looping space video, purple rim)"; case .lounge: return "lounge (warm room, spot + rim)"; case .office: return "office (window, desk)"; case .neon: return "neon (drifting glow)"; case .plain: return "plain" }
     }
 }
 
@@ -76,6 +76,7 @@ final class PepeModel: ObservableObject {
     @Published var bakedSmoke: Bool { didSet { UserDefaults.standard.set(bakedSmoke, forKey: "bakedSmoke"); applySmoke() } }
     @Published var smokeBrightness: Double { didSet { UserDefaults.standard.set(smokeBrightness, forKey: "smokeBrightness"); applySmoke() } }
     @Published var smokeFlipV: Bool { didSet { UserDefaults.standard.set(smokeFlipV, forKey: "smokeFlipV"); applySmoke() } }
+    @Published var nebulaVideo: NebulaVideo.Mode { didSet { UserDefaults.standard.set(nebulaVideo.rawValue, forKey: "nebulaVideo"); scene.setNebulaMode(nebulaVideo) } }
     func applySmoke() { scene.setBakedSmoke(on: bakedSmoke, brightness: Float(smokeBrightness), flipV: smokeFlipV) }
     @Published var streetTime: StreetTime { didSet { UserDefaults.standard.set(streetTime.rawValue, forKey: "streetTime"); scene.setStreetTime(streetTime) } }
     @Published var showWorkers: Bool { didSet { UserDefaults.standard.set(showWorkers, forKey: "showWorkers"); scene.setWorkers(agents, enabled: showWorkers) } }
@@ -98,7 +99,7 @@ final class PepeModel: ObservableObject {
     @Published var connected = false
     @Published var status = "starting"
     @Published var bubble: String? = nil
-    @Published var pipActive = false
+    @Published var pipActive = false { didSet { scene.nebula.setPiPVisible(pipActive) } }
     @Published var sceneLoaded = false
     @Published var cards: [Card] = []
     @Published var cardIndex = 0
@@ -133,6 +134,8 @@ final class PepeModel: ObservableObject {
         bakedSmoke = d.object(forKey: "bakedSmoke") != nil ? d.bool(forKey: "bakedSmoke") : true   // bool(forKey:) also parses a "-bakedSmoke 0" launch argument
         smokeBrightness = d.object(forKey: "smokeBrightness") as? Double ?? 1.0
         smokeFlipV = d.object(forKey: "smokeFlipV") as? Bool ?? false
+        nebulaVideo = NebulaVideo.Mode(rawValue: d.string(forKey: "nebulaVideo") ?? "") ?? .output   // also the -nebulaVideo launch arg
+        scene.setNebulaMode(nebulaVideo)
         speakReplies = d.object(forKey: "speakReplies") as? Bool ?? true
         micOn = d.object(forKey: "micOn") as? Bool ?? true
         speechLang = d.string(forKey: "speechLang") ?? "auto"

@@ -54,6 +54,11 @@ run smoke_street  -background street -streetTime day -exhaleAt 6.2
 run smoke_parts   -background office -exhaleAt 6.8 -bakedSmoke 0
 run celebrating   -background ops    -testState celebrating -stateAt 6.5 -bubble "all 42 tests passed, shipping it"
 run sleep_dim     -background street -streetTime dusk -reaction sleep -reactAt 5
+run nebula        -background nebula
+run nebula_player -background nebula -nebulaVideo player
+run nebula_still  -background nebula -nebulaVideo still
+run nebula_916    -background nebula -cardSize nineSixteen -testState celebrating -stateAt 6.5 -bubble "nebula, 9:16 card"
+run nebula_smoke  -background nebula -exhaleAt 6.8
 
 xcrun simctl terminate "$UDID" "$BID" 2>/dev/null
 sleep 2; kill $LOGPID 2>/dev/null
@@ -72,6 +77,10 @@ done
 grep -h "baked smoke" "$OUT"/logs/smoke_early.err | head -5
 grep -q "baked smoke: ready" "$OUT/logs/smoke_early.err" || { echo "::error::baked smoke atlases did not load"; fail=1; }
 grep -q "baked exhale at" "$OUT/logs/smoke_early.err" || { echo "::error::no baked exhale in smoke_early"; fail=1; }
+grep -h "nebula" "$OUT"/logs/nebula.err | head -12
+grep -q "nebula: first video frame" "$OUT/logs/nebula.err" || { echo "::error::nebula: no video frame reached the backdrop (output mode)"; fail=1; }
+grep -q "baked exhale at" "$OUT/logs/nebula_smoke.err" || { echo "::error::no baked exhale on the nebula"; fail=1; }
+grep -h "nebula" "$OUT"/logs/nebula_player.err | head -6
 echo "--- SceneKit error lines (all, deduplicated) ---"
 grep -h "SceneKit\]" "$OUT/logs/oslog.txt" | sed 's/^.*\] //' | sort | uniq -c | sort -rn | head -20
 echo "--- app log excerpt (smoke_early) ---"; head -60 "$OUT/logs/smoke_early.err"

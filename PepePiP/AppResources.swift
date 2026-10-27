@@ -6,7 +6,7 @@ import Foundation
 import UIKit
 
 enum AppResources {
-    static let assets = ["pepe.glb"]   // the textures are drawn in code (Backdrops.swift); only the model is a loose file
+    static let assets = ["pepe.glb", "nebula_720.mp4"]   // textures are drawn in code or embedded; the model and the nebula loop are loose files
     private static var announced = false
     private static var reported = false
 

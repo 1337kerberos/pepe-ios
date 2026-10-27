@@ -63,6 +63,8 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     private var squashAmp: Float = 0.16
     private var squashing = false
     private var dim: Double = 1
+    let nebula = NebulaVideo()                    // 0.14: looping video backdrop (NebulaVideo.swift)
+    private var nebulaMode: NebulaVideo.Mode = .output
     static let maxWorkers = 4
 
     func load(completion: @escaping (Error?) -> Void) {
@@ -190,6 +192,9 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         case .lounge: preset = L(key: (1300, c(1.0, 0.88, 0.74)), fill: (350, c(0.75, 0.82, 1.0)), rim: (800, c(0.7, 0.8, 1.0)), amb: (300, c(1.0, 0.92, 0.85)))
         case .office: preset = L(key: (1150, c(0.95, 0.97, 1.0)), fill: (500, c(0.85, 0.9, 1.0)), rim: (500, c(1.0, 1.0, 1.0)), amb: (450, c(0.82, 0.87, 0.96)))
         case .neon:   preset = L(key: (1150, c(0.85, 1.0, 0.9)), fill: (450, c(0.9, 0.75, 1.0)), rim: (900, c(0.8, 0.6, 1.0)), amb: (350, c(0.9, 0.85, 1.0)))
+        case .nebula:
+            // cool-white key, violet fill, a strong soft purple rim from behind so he sits in the nebula's light
+            preset = L(key: (1100, c(0.93, 0.9, 1.0)), fill: (420, c(0.72, 0.6, 1.0)), rim: (1500, c(0.78, 0.42, 1.0)), amb: (260, c(0.78, 0.7, 1.0)))
         case .plain:  preset = L(key: (1200, c(1.0, 0.96, 0.9)), fill: (400, c(0.8, 0.87, 1.0)), rim: (600, c(0.95, 0.95, 1.0)), amb: (350, .white))
         case .ops:    preset = L(key: (1200, c(0.92, 0.95, 1.0)), fill: (400, c(0.8, 0.87, 1.0)), rim: (650, c(0.7, 0.8, 1.0)), amb: (260, c(0.85, 0.9, 1.0)))
         case .street:
@@ -213,12 +218,17 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         // backdrop texture: the laptop-made JPEG embedded in EmbeddedBackdrops.swift (the Core Graphics versions came out
         // near-black on device); the CG drawing stays as the fallback if a decode ever fails
         var tex: UIImage? = nil; var source = "none"
-        if bg != .plain && bg != .street {
+        if bg != .plain && bg != .street && bg != .nebula {
             if let e = EmbeddedBackdrops.image(bg == .ops ? "office" : bg.rawValue) { tex = e; source = "embedded jpeg" }
             else { switch bg { case .lounge: tex = Backdrops.lounge; case .office: tex = Backdrops.office; default: tex = Backdrops.neon }; source = "CG fallback (embedded decode failed)" }
         }
-        backdrop?.isHidden = tex == nil
-        if let m = backdrop?.geometry?.firstMaterial { m.diffuse.contents = tex ?? UIColor.darkGray; m.diffuse.intensity = CGFloat(dim); m.multiply.contents = nil }
+        if bg == .nebula { source = "nebula loop (\(nebulaMode.rawValue)), still fallback" }
+        backdrop?.isHidden = tex == nil && bg != .nebula
+        if let m = backdrop?.geometry?.firstMaterial {
+            if bg != .nebula { m.diffuse.contents = tex ?? UIColor.darkGray }
+            m.diffuse.intensity = CGFloat(dim); m.multiply.contents = nil
+        }
+        nebula.activate(bg == .nebula, material: backdrop?.geometry?.firstMaterial, mode: nebulaMode)
         floorNode?.isHidden = bg == .plain || bg == .street   // its square edge shows on the bright pavement
         blobs.forEach { $0.0.isHidden = bg != .neon }
         if bg == .street { source = "procedural street, \(street?.period.rawValue ?? "?")" }
@@ -243,6 +253,9 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     }
 
     func setSmokeDebug(_ on: Bool) { baked?.debug = on }
+
+    /// Settings > Look > Nebula video (output | player | still); re-applies the preset when it is showing.
+    func setNebulaMode(_ m: NebulaVideo.Mode) { nebulaMode = m; if background == .nebula { setBackground(.nebula) } }
 
     /// Settings > Look > Smoke: baked cards (default) or the 0.3 particles; brightness scales the smoke's light terms
     func setBakedSmoke(on: Bool, brightness: Float, flipV: Bool) {
@@ -324,7 +337,11 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         let w = h * max(camAspect, 1) * 1.15
         let cx = camTarget.x - tanf(PepeScene.camBaseYaw) * back            // the line of sight continues past the target
         let cy = camTarget.y - 0.08 * camDistance * (back / max(0.1, camDistance * cosf(PepeScene.camBaseYaw)))   // slight downward look
-        if let plane = backdrop?.geometry as? SCNPlane { plane.width = CGFloat(w); plane.height = CGFloat(h) }
+        if let plane = backdrop?.geometry as? SCNPlane {
+            plane.width = CGFloat(w); plane.height = CGFloat(h)
+            // the nebula is a 16:9 video: crop it to the plane (centred) instead of stretching; other textures are square
+            plane.firstMaterial?.diffuse.contentsTransform = background == .nebula ? nebula.cropTransform(planeAspect: CGFloat(w / h)) : SCNMatrix4Identity
+        }
         backdrop?.simdPosition = simd_float3(cx, cy, camTarget.z - back)
         if let ops {
             let deskDepth: Float = 2.3
@@ -416,6 +433,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         placeCamera(time: time)
         applySquash()
+        if background == .nebula { nebula.tick(device: renderer.device) }
         if let street, !street.root.isHidden { street.tick(time: time) }
         if bakedActive, let baked, let cam = cameraNodeRef {
             baked.tick(camera: cam.presentation.simdWorldPosition, tip: cigarOn ? tipNode?.presentation.simdWorldPosition : nil)

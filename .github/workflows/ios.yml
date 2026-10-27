@@ -60,7 +60,7 @@ jobs:
           (cd build && zip -qr PepePiP-unsigned.ipa Payload)
           ls -la build/PepePiP-unsigned.ipa
           # what's inside (frameworks must be present for the signer to re-sign them)
-          unzip -l build/PepePiP-unsigned.ipa | grep -E "Frameworks/|pepe.glb|Info.plist|PlugIns" || true
+          unzip -l build/PepePiP-unsigned.ipa | grep -E "Frameworks/|pepe.glb|nebula_720.mp4|Info.plist|PlugIns" || true
 
       - uses: actions/upload-artifact@v4
         with:

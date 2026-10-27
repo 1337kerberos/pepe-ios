@@ -93,6 +93,7 @@ struct SettingsView: View {
                 Section("Look") {
                     Picker("Background", selection: $model.background) { ForEach(Background.allCases) { Text($0.label).tag($0) } }
                     if model.background == .street { Picker("Street time", selection: $model.streetTime) { ForEach(StreetTime.allCases) { Text($0.label).tag($0) } } }
+                    if model.background == .nebula { Picker("Nebula video", selection: $model.nebulaVideo) { ForEach(NebulaVideo.Mode.allCases) { Text($0.label).tag($0) } } }
                     HStack { Text("Brightness"); Slider(value: $model.brightness, in: 0.5...2.0, step: 0.05); Text(String(format: "%.2f", model.brightness)).monospacedDigit().frame(width: 44) }
                     HStack { Text("Pepe scale"); Slider(value: $model.pepeScale, in: 0.6...1.2, step: 0.05); Text(String(format: "%.2f", model.pepeScale)).monospacedDigit().frame(width: 44) }
                     Toggle("Cigar (idle smoke every 45-120 s)", isOn: $model.cigarOn)

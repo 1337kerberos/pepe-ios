@@ -27,6 +27,8 @@ targets:
       - path: Shared
       - path: Assets/pepe.glb
         buildPhase: resources
+      - path: Assets/nebula_720.mp4      # 0.14 nebula loop (looked up through AppResources, LiveContainer-safe)
+        buildPhase: resources
     dependencies:
       - package: GLTFKit2
     settings:
@@ -34,8 +36,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: lab.pepe.pip
         INFOPLIST_FILE: PepePiP/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "0.13"
-        CURRENT_PROJECT_VERSION: "18"
+        MARKETING_VERSION: "0.14"
+        CURRENT_PROJECT_VERSION: "19"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""

@@ -1,6 +1,7 @@
 // Simulator / UI test mode (CI: .github/workflows/ios-sim.yml + tools/sim_shots.sh). Launch with `-uiTest 1` plus any of:
-//   -background ops|street|lounge|office|neon|plain   -streetTime auto|dawn|day|dusk|night   -pipMode videoCall|sampleBuffer
-//   (those three are plain UserDefaults keys: the argument domain overrides the saved settings for this launch)
+//   -background ops|street|nebula|lounge|office|neon|plain   -streetTime auto|dawn|day|dusk|night   -pipMode videoCall|sampleBuffer
+//   -nebulaVideo output|player|still   -cardSize threeFour|nineSixteen|square
+//   (those are plain UserDefaults keys: the argument domain overrides the saved settings for this launch)
 //   -testState working|thinking|celebrating|failing|smoking   -stateAt <s since launch, default 2>
 //   -exhaleAt <s>      play the smoke_exhale take from 4.25 s in: the exhale (baked cards or particles) fires at once
 //   -reaction squash|stumble|sleep|wake   -reactAt <s>      -bubble <text>      -smokeDebug 1 (cards drawn as UV + alpha)
