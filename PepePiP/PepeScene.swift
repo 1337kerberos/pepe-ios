@@ -333,7 +333,9 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         let tanHalf = tanf(36 * .pi / 180 / 2)
         let back = background == .ops ? PepeScene.backdropZOps : PepeScene.backdropZ
         let dist = camDistance * cosf(PepeScene.camBaseYaw) + back
-        let h = 2 * dist * tanHalf * 1.15
+        // nebula: more margin (1.45): seen at the 18 deg 3/4 yaw the plane's far (left) bottom corner showed the clear colour
+        // in the 0.14 simulator shots; the video is cropped to the plane's aspect, so a bigger plane only zooms it a little
+        let h = 2 * dist * tanHalf * (background == .nebula ? 1.45 : 1.15)
         let w = h * max(camAspect, 1) * 1.15
         let cx = camTarget.x - tanf(PepeScene.camBaseYaw) * back            // the line of sight continues past the target
         let cy = camTarget.y - 0.08 * camDistance * (back / max(0.1, camDistance * cosf(PepeScene.camBaseYaw)))   // slight downward look

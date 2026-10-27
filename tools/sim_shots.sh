@@ -59,6 +59,7 @@ run nebula_player -background nebula -nebulaVideo player
 run nebula_still  -background nebula -nebulaVideo still
 run nebula_916    -background nebula -cardSize nineSixteen -testState celebrating -stateAt 6.5 -bubble "nebula, 9:16 card"
 run nebula_smoke  -background nebula -exhaleAt 6.8
+run nebula_smoke2 -background nebula -exhaleAt 6.2
 
 xcrun simctl terminate "$UDID" "$BID" 2>/dev/null
 sleep 2; kill $LOGPID 2>/dev/null
@@ -67,7 +68,7 @@ ls -la "$OUT/shots"
 # ---- assertions ----
 fail=0
 PAT='MTLLibraryErrorDomain|program_source:[0-9]+:[0-9]+: error|failed compiling shader|failed to compile|Compiler error|SCNShaderModifier|SceneKit\] Error'
-if grep -hiE "$PAT" "$OUT"/logs/*.txt "$OUT"/logs/*.out "$OUT"/logs/*.err 2>/dev/null | grep -v "^== " | head -40 | tee "$OUT/logs/shader_errors.txt" | grep -q .; then
+if grep -hiE "$PAT" "$OUT"/logs/*.txt "$OUT"/logs/*.out "$OUT"/logs/*.err 2>/dev/null | grep -v "^== " | grep -v "Could not get pixel buffer" | head -40 | tee "$OUT/logs/shader_errors.txt" | grep -q .; then
   echo "::error::SceneKit/Metal shader errors (see logs/shader_errors.txt)"; cat "$OUT/logs/shader_errors.txt"; fail=1
 fi
 for f in "$OUT"/logs/*.err; do        # the app logs to stderr in test mode (unbuffered)
@@ -81,6 +82,9 @@ grep -h "nebula" "$OUT"/logs/nebula.err | head -12
 grep -q "nebula: first video frame" "$OUT/logs/nebula.err" || { echo "::error::nebula: no video frame reached the backdrop (output mode)"; fail=1; }
 grep -q "baked exhale at" "$OUT/logs/nebula_smoke.err" || { echo "::error::no baked exhale on the nebula"; fail=1; }
 grep -h "nebula" "$OUT"/logs/nebula_player.err | head -6
+# SceneKit's own AVPlayer material (nebula_player, comparison only) logs "Could not get pixel buffer" while the player
+# warms up; it is exempt from the shader-error gate above. The default (output) path never touches it.
+echo "player-material pixel-buffer errors: $(grep -c "Could not get pixel buffer" "$OUT/logs/oslog.txt")"
 echo "--- SceneKit error lines (all, deduplicated) ---"
 grep -h "SceneKit\]" "$OUT/logs/oslog.txt" | sed 's/^.*\] //' | sort | uniq -c | sort -rn | head -20
 echo "--- app log excerpt (smoke_early) ---"; head -60 "$OUT/logs/smoke_early.err"
