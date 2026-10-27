@@ -97,6 +97,15 @@ struct SettingsView: View {
                     Toggle("Show co-workers (\(model.agents.count) agent\(model.agents.count == 1 ? "" : "s") reported)", isOn: $model.showWorkers)
                     Button("Exhale now") { model.director.smokeNow() }.disabled(!model.sceneLoaded)
                 }
+                Section {
+                    Toggle("Reactions", isOn: $model.reactionsOn)
+                    HStack {
+                        Button("Squash") { model.scene.squash(); model.director.react(.veryHappy) }.buttonStyle(.bordered)
+                        Button("Stumble") { model.scene.squash(amount: 0.1); model.director.react(.angry, hold: 1) }.buttonStyle(.bordered)
+                        Button("Sleep") { model.director.setSleeping(true) }.buttonStyle(.bordered)
+                        Button("Wake") { model.director.setSleeping(false) }.buttonStyle(.bordered)
+                    }.disabled(!model.sceneLoaded).font(.caption)
+                } header: { Text("Reactions") } footer: { Text("Pinch/double-tap the card (sample-buffer path): squash + surprise. Shake: stumble. Face down 2 s: he sleeps, lights dim; pick up: wave. Battery < 20 % or Low Power Mode: bored + \"low battery\"; plug in: very happy. Headphones in: nod. The buttons fake the triggers.") }
                 Section("Build") { Text(PepeModel.versionLine).font(.footnote.monospaced()) }
                 Section("Log") {
                     ScrollView { Text(Log.lines.suffix(80).joined(separator: "\n")).font(.system(size: 10, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading) }

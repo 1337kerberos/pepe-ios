@@ -31,8 +31,9 @@ final class PepeViewController: UIViewController {
 
         pip.onActive = { [weak self] on in
             self?.model.pipActive = on
-            if on { AudioKeepAlive.shared.start() } else { AudioKeepAlive.shared.stop() }
+            if on { AudioKeepAlive.shared.start() } else { AudioKeepAlive.shared.stop(); self?.model.reactions.pipStopped() }
         }
+        pip.onRenderSize = { [weak self] size in self?.model.reactions.cardResized(size) }
         pip.onPlayPause = { [weak self] in self?.model.requestSummary() }
         pip.onSkip = { [weak self] d in self?.model.stepCard(d) }
         pip.onFailed = { [weak self] _ in

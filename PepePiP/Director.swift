@@ -48,8 +48,48 @@ final class Director {
     init(model: PepeModel) { self.model = model }
 
     /// The idle base loop: on the street preset he walks in place while the set scrolls (StreetSet), else he stands.
-    private var idleClip: Clip { model.background == .street && model.scene.has(Clip.walk.rawValue) ? .walk : .idle }
+    private var idleClip: Clip {
+        if sleeping || lowBattery { return .bored }                     // 0.11 reactions: face-down sleep, low battery
+        return model.background == .street && model.scene.has(Clip.walk.rawValue) ? .walk : .idle
+    }
     private var offline = false
+    private var sleeping = false
+    private var lowBattery = false
+
+    // MARK: device reactions (Reactions.swift)
+    /// a one-shot on top of whatever loop is running, then back to it
+    func react(_ clip: Clip, hold: TimeInterval? = nil, bubble: String? = nil) {
+        guard model.scene.has(clip.rawValue) else { return }
+        oneShot(clip, hold: hold ?? model.scene.duration(of: clip.rawValue))
+        if let bubble { say(bubble, hold: 3) }
+    }
+
+    /// face-down: bored loop + dimmed lights while the brain is idle; picked up: lights back, wave
+    func setSleeping(_ on: Bool) {
+        guard on != sleeping else { return }
+        sleeping = on
+        model.scene.setDim(on ? 0.35 : 1)
+        let idleNow = currentState == "idle" || offline
+        if on {
+            idleTimer?.invalidate(); smokeTimer?.invalidate()
+            model.laState = "sleeping"
+            if idleNow { loop(idleClip); model.setStatus("asleep (face down)") }
+        } else {
+            if model.laState == "sleeping" { model.laState = "idle" }
+            if idleNow { loop(idleClip); model.setStatus(offline ? "brain offline" : "idle") }
+            oneShot(.wave, hold: 2.2)
+            if idleNow { scheduleIdleLife(); scheduleSmoke() }
+        }
+    }
+
+    /// battery < 20 % or Low Power Mode: bored loop, no smoke breaks, status "low battery"
+    func setLowBattery(_ on: Bool) {
+        guard on != lowBattery else { return }
+        lowBattery = on
+        let idleNow = currentState == "idle" || offline
+        if on { smokeTimer?.invalidate(); model.setStatus("low battery") }
+        if idleNow { loop(idleClip); if !on { model.setStatus(offline ? "brain offline" : "idle"); scheduleSmoke() } }
+    }
 
     /// Settings > Background changed: swap the idle loop (walk <-> stand) if he is idle right now.
     func backgroundChanged() {
@@ -249,7 +289,7 @@ final class Director {
     /// in the glb, then the exhale take (the burst fires at 4.33 s, PepeScene), then back to idle.
     private func scheduleSmoke() {
         smokeTimer?.invalidate()
-        if model.synced { return }
+        if model.synced || sleeping || lowBattery { return }
         smokeTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 45...120), repeats: false) { [weak self] _ in
             guard let self, self.currentState == "idle", self.model.cigarOn, !self.model.synced else { return }
             self.smokeNow()
@@ -278,7 +318,7 @@ final class Director {
     /// idle_life: every 8-20 s of idle play a short variation, then return to the base idle.
     private func scheduleIdleLife() {
         idleTimer?.invalidate()
-        if model.synced { return }
+        if model.synced || sleeping { return }
         idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 8...20), repeats: false) { [weak self] _ in
             guard let self, self.currentState == "idle" || self.offline, !self.model.synced else { return }
             if self.idleClip == .walk {

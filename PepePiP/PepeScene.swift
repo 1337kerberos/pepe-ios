@@ -54,6 +54,11 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     private var glbURL: URL?
     private var characterRoot: SCNNode?          // the main glb's container (for material sharing with workers)
     private var spawning = 0
+    private var characterNodes: [(SCNNode, SCNVector3)] = []   // the glb's top-level nodes + their own scale (squash-and-stretch)
+    private var squashT0: TimeInterval = -10
+    private var squashAmp: Float = 0.16
+    private var squashing = false
+    private var dim: Double = 1
     static let maxWorkers = 4
 
     func load(completion: @escaping (Error?) -> Void) {
@@ -81,6 +86,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         let source = GLTFSCNSceneSource(asset: asset)
         guard let loaded = source.defaultScene else { Log.add("glb has no default scene"); return }
         scene = loaded
+        characterNodes = scene.rootNode.childNodes.map { ($0, $0.scale) }
         scene.background.contents = PepeScene.clearColor
         for anim in source.animations {
             let p = anim.animationPlayer
@@ -195,7 +201,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         for w in workers.values { w.root.isHidden = bg == .street }   // co-workers live in the office, not on the road
         fitBackdrop()   // the wall sits behind the far desks in ops, closer otherwise
         for (l, p) in [(keyLight, preset.key), (fillLight, preset.fill), (rimLight, preset.rim), (ambLight, preset.amb)] {
-            l.color = p.1; l.intensity = p.0 * CGFloat(brightness)
+            l.color = p.1; l.intensity = p.0 * CGFloat(brightness * dim)
         }
         // backdrop texture: the laptop-made JPEG embedded in EmbeddedBackdrops.swift (the Core Graphics versions came out
         // near-black on device); the CG drawing stays as the fallback if a decode ever fails
@@ -205,7 +211,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
             else { switch bg { case .lounge: tex = Backdrops.lounge; case .office: tex = Backdrops.office; default: tex = Backdrops.neon }; source = "CG fallback (embedded decode failed)" }
         }
         backdrop?.isHidden = tex == nil
-        if let m = backdrop?.geometry?.firstMaterial { m.diffuse.contents = tex ?? UIColor.darkGray; m.diffuse.intensity = 1; m.multiply.contents = nil }
+        if let m = backdrop?.geometry?.firstMaterial { m.diffuse.contents = tex ?? UIColor.darkGray; m.diffuse.intensity = CGFloat(dim); m.multiply.contents = nil }
         floorNode?.isHidden = bg == .plain
         blobs.forEach { $0.0.isHidden = bg != .neon }
         if bg == .street { source = "procedural street, \(street?.period.rawValue ?? "?")" }
@@ -214,6 +220,32 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
 
     /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity (re-applies the current preset).
     func setBrightness(_ factor: Double) { brightness = factor; setBackground(background) }
+
+    /// Reactions: face-down sleep dims every light (and the backdrop) over 1.2 s; 1 = normal.
+    func setDim(_ factor: Double) {
+        dim = factor
+        SCNTransaction.begin(); SCNTransaction.animationDuration = 1.2
+        setBackground(background)
+        SCNTransaction.commit()
+    }
+
+    /// Reactions: a squash-and-stretch of the character about his feet (sy dips, then overshoots, settles in ~0.8 s;
+    /// x/z keep the volume). Evaluated per frame as an absolute function of time, like the camera drift.
+    func squash(amount: Float = 0.16) { squashAmp = amount; squashT0 = CACurrentMediaTime() }
+
+    private func applySquash() {
+        let t = CACurrentMediaTime() - squashT0
+        if t >= 0, t < 0.9 {
+            let tt = Float(t)
+            let sy = 1 - squashAmp * sinf(2 * .pi * tt / 0.32) * expf(-tt / 0.2)
+            let sxz = 1 / sqrtf(max(0.5, sy))
+            for (n, base) in characterNodes { n.scale = SCNVector3(base.x * sxz, base.y * sy, base.z * sxz) }
+            squashing = true
+        } else if squashing {
+            squashing = false
+            for (n, base) in characterNodes { n.scale = base }
+        }
+    }
 
     /// Settings > Street time (auto = the phone clock); re-applies the lights when the street is showing.
     func setStreetTime(_ t: StreetTime) { street?.setTime(t); if background == .street { setBackground(.street) } }
@@ -339,6 +371,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     // its render thread; the camera is a pure function of time, so several renderers can share the scene safely.
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         placeCamera(time: time)
+        applySquash()
         if let street, !street.root.isHidden { street.tick(time: time) }
     }
 

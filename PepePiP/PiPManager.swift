@@ -28,6 +28,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate, AVPictur
     var onPlayPause: (() -> Void)?
     var onSkip: ((Int) -> Void)?
     var onFailed: ((Error) -> Void)?
+    var onRenderSize: ((CMVideoDimensions) -> Void)?
     private var paused = false
 
     var isActive: Bool { controller?.isPictureInPictureActive ?? false }
@@ -96,6 +97,7 @@ final class PiPManager: NSObject, AVPictureInPictureControllerDelegate, AVPictur
     func pictureInPictureControllerIsPlaybackPaused(_ c: AVPictureInPictureController) -> Bool { paused }
     func pictureInPictureController(_ c: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {
         Log.add("PiP render size \(newRenderSize.width)x\(newRenderSize.height)")
+        DispatchQueue.main.async { [weak self] in self?.onRenderSize?(newRenderSize) }
     }
     func pictureInPictureController(_ c: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
         let dir = skipInterval.seconds >= 0 ? 1 : -1
