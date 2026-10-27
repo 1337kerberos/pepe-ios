@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.6 beat-sync" }
+enum BuildInfo { static let tag = "0.7 embedded-backdrops" }
 
 enum Background: String, CaseIterable, Identifiable {
     case lounge, office, neon, plain

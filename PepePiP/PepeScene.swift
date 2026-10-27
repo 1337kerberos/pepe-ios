@@ -33,6 +33,8 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     private static let camBaseYaw: Float = 18 * .pi / 180   // 3/4 view: camera on the +Z side, swung toward +X
     private static let camDriftAmp: Float = 2 * .pi / 180   // +-2 deg
     private static let camDriftPeriod: Float = 8
+    private static let backdropSize: CGFloat = 9
+    private static let backdropZ: Float = 2.6
     private let bubbleNode = TextPlane(width: 1.25, height: 0.42, pixels: CGSize(width: 750, height: 252), font: 34, color: .black, bg: UIColor(white: 1, alpha: 0.95))
     private let statusNode = TextPlane(width: 1.5, height: 0.14, pixels: CGSize(width: 900, height: 84), font: 36, color: .white, bg: UIColor(white: 0, alpha: 0.45))
     // clips are pre-faced +Z (make_clips_boss.py), so the camera sits on the +Z side
@@ -110,11 +112,19 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     }
 
     private func addBackdrop() {
-        let plane = SCNPlane(width: 7.5, height: 7.5)
+        // 9 m square, 2.6 m behind the character: at the bbox camera distance (~3.2 m, 36 deg vertical FOV) the card sees
+        // ~3.7 m of it, so it covers every aspect and every "Pepe scale" (coverage is logged by setBackground)
+        let plane = SCNPlane(width: PepeScene.backdropSize, height: PepeScene.backdropSize)
         let m = SCNMaterial(); m.lightingModel = .constant; m.isDoubleSided = true
+        m.diffuse.intensity = 1; m.multiply.contents = nil; m.diffuse.wrapS = .clamp; m.diffuse.wrapT = .clamp
+        m.ambient.contents = UIColor.black; m.emission.contents = UIColor.black   // nothing but the texture
         plane.materials = [m]
-        let n = SCNNode(geometry: plane); n.position = SCNVector3(0, 2.0, -2.6); n.renderingOrder = -10
+        let n = SCNNode(geometry: plane); n.position = SCNVector3(0, 2.0, -PepeScene.backdropZ); n.renderingOrder = -10
         scene.rootNode.addChildNode(n); backdrop = n
+        for name in ["lounge", "office", "neon"] {
+            let img = EmbeddedBackdrops.image(name)
+            Log.add("embedded backdrop \(name): \(img.map { "\(Int($0.size.width))x\(Int($0.size.height)) scale \($0.scale)" } ?? "DECODE FAILED (nil)")")
+        }
 
         let floor = SCNPlane(width: 5, height: 5)
         let fm = SCNMaterial(); fm.lightingModel = .constant; fm.blendMode = .alpha; fm.writesToDepthBuffer = false
@@ -149,13 +159,21 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         for (l, p) in [(keyLight, preset.key), (fillLight, preset.fill), (rimLight, preset.rim), (ambLight, preset.amb)] {
             l.color = p.1; l.intensity = p.0 * CGFloat(brightness)
         }
-        let tex: UIImage?
-        switch bg { case .lounge: tex = Backdrops.lounge; case .office: tex = Backdrops.office; case .neon: tex = Backdrops.neon; case .plain: tex = nil }
+        // backdrop texture: the laptop-made JPEG embedded in EmbeddedBackdrops.swift (the Core Graphics versions came out
+        // near-black on device); the CG drawing stays as the fallback if a decode ever fails
+        var tex: UIImage? = nil; var source = "none"
+        if bg != .plain {
+            if let e = EmbeddedBackdrops.image(bg.rawValue) { tex = e; source = "embedded jpeg" }
+            else { switch bg { case .lounge: tex = Backdrops.lounge; case .office: tex = Backdrops.office; default: tex = Backdrops.neon }; source = "CG fallback (embedded decode failed)" }
+        }
         backdrop?.isHidden = tex == nil
-        backdrop?.geometry?.firstMaterial?.diffuse.contents = tex ?? UIColor.darkGray
+        if let m = backdrop?.geometry?.firstMaterial { m.diffuse.contents = tex ?? UIColor.darkGray; m.diffuse.intensity = 1; m.multiply.contents = nil }
         floorNode?.isHidden = bg == .plain
         blobs.forEach { $0.0.isHidden = bg != .neon }
-        Log.add("background \(bg.rawValue) (procedural texture \(tex.map { "\(Int($0.size.width))px" } ?? "none"))")
+        // projected coverage: half-size of the plane over its distance to the camera, vs the view's tan(FOV/2) (1.0 = exactly fills the height)
+        let planeDist = camDistance * cosf(PepeScene.camBaseYaw) + PepeScene.backdropZ
+        let coverage = (Float(PepeScene.backdropSize) / 2 / planeDist) / tanf(36 * .pi / 180 / 2)
+        Log.add("background \(bg.rawValue): \(source)\(tex.map { " \(Int($0.size.width))x\(Int($0.size.height))" } ?? ""), plane \(PepeScene.backdropSize) m at \(String(format: "%.1f", planeDist)) m -> covers \(String(format: "%.2f", coverage))x the card height (needs > 1 / aspect for width)")
     }
 
     /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity (re-applies the current preset).

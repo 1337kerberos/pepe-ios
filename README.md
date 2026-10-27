@@ -26,6 +26,7 @@ ios/
     BrainClient.swift               URLSessionWebSocketTask client: JSON events in, {"type":"chat"} out, reconnect + pings
     Director.swift                  brain events -> clip (idle/think/typing/explain/celebrate/fail...), status line, bubble, cards
     AppResources.swift              loose-file lookup that survives LiveContainer (Bundle(for:) / main / exe dir / argv0) + asset inventory log
+    EmbeddedBackdrops.swift         the three backdrop JPEGs as base64 (made on the laptop by tools/bg; LiveContainer-proof)
     Backdrops.swift                 procedural textures (lounge/office/neon backdrops, floor shadow, glow, puff) drawn with Core Graphics
     PepeScene.swift                 SceneKit scene from pepe.glb (GLTFKit2), SCNAnimationPlayer crossfades, 3/4 camera,
                                     soft lights, bubble + status as textured planes inside the 3D frame (visible in PiP)
@@ -122,6 +123,12 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   the smoke sequence) drive them; `music_playing` beats map `wows_desk_dance` (not on the phone) to `cheering` as a loop
   and put the beat's status in the status line ("listening: ..."). When the brain drops, `synced` resets and the local
   timers come back. One log line per synced beat: `beat <rule>: <clip> -> <phone clip> @<offset>s`.
+- **0.7: embedded backdrops.** The Core Graphics backdrops rendered near-black on the device, so the three backdrops
+  are laptop-made JPEGs (`tools/bg/`, PIL) embedded as base64 in `PepePiP/EmbeddedBackdrops.swift`
+  (`EmbeddedBackdrops.image("lounge"|"office"|"neon")`); `setBackground` uses them (CG drawing only as a fallback if a
+  decode fails) on a 9 m constant-lit plane 2.6 m behind Pepe with `diffuse.intensity = 1`, no multiply/emission. The
+  floor shadow, glow and puff sprites stay procedural. The log prints each embedded image's size at scene setup and,
+  per preset change, the source and the plane's projected coverage of the card height.
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 
