@@ -60,6 +60,30 @@ run nebula_still  -background nebula -nebulaVideo still
 run nebula_916    -background nebula -cardSize nineSixteen -testState celebrating -stateAt 6.5 -bubble "nebula, 9:16 card"
 run nebula_smoke  -background nebula -exhaleAt 6.8
 run nebula_smoke2 -background nebula -exhaleAt 6.2
+# 0.15: voice panel states (no mic in the simulator: TestMode fakes the panel), the Debug + Live Activity screens
+run voice_tap     -background nebula -voiceDemo listening -voiceAt 3
+run voice_hold_err -background ops   -talkMode hold -voiceDemo error -voiceAt 3
+run debug_top     -background ops    -openSettings debug -liveStart 2
+run debug_log     -background ops    -openSettings debug -debugAnchor log -settingsAt 2
+run live_panel    -background ops    -openSettings live -liveStart 2
+
+# Live Activity in the Dynamic Island: start it, then put the app in the background (Settings app in front)
+island() {
+  xcrun simctl terminate "$UDID" "$BID" 2>/dev/null; sleep 1
+  echo "== island"
+  local t0=$(python3 -c 'import time;print(time.time())')
+  xcrun simctl launch --terminate-running-process --stdout="$PWD/$OUT/logs/island.out" --stderr="$PWD/$OUT/logs/island.err" \
+    "$UDID" "$BID" -uiTest 1 -background ops -liveStart 2 >/dev/null || echo "::warning::launch failed for island"
+  python3 -c "import time;d=$t0+6-time.time();time.sleep(max(0,d))"
+  xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/island_6s_app.png" >/dev/null 2>&1
+  xcrun simctl launch "$UDID" com.apple.Preferences >/dev/null 2>&1 || echo "::warning::could not open the Settings app"
+  for s in 9 13; do
+    python3 -c "import time;d=$t0+$s-time.time();time.sleep(max(0,d))"
+    xcrun simctl io "$UDID" screenshot --type=png "$OUT/shots/island_${s}s_bg.png" >/dev/null 2>&1
+  done
+  xcrun simctl terminate "$UDID" com.apple.Preferences 2>/dev/null
+}
+island
 
 xcrun simctl terminate "$UDID" "$BID" 2>/dev/null
 sleep 2; kill $LOGPID 2>/dev/null
@@ -84,6 +108,10 @@ grep -q "baked exhale at" "$OUT/logs/nebula_smoke.err" || { echo "::error::no ba
 grep -h "nebula" "$OUT"/logs/nebula_player.err | head -6
 # SceneKit's own AVPlayer material (nebula_player, comparison only) logs "Could not get pixel buffer" while the player
 # warms up; it is exempt from the shader-error gate above. The default (output) path never touches it.
+echo "--- 0.15 voice / live activity ---"
+grep -h "voice demo\|TEST install\|TEST live activity\|live activity:" "$OUT"/logs/voice_tap.err "$OUT"/logs/debug_top.err "$OUT"/logs/live_panel.err "$OUT"/logs/island.err 2>/dev/null | head -30
+grep -q "voice demo: listening" "$OUT/logs/voice_tap.err" || { echo "::error::voice demo did not run"; fail=1; }
+grep -q "TEST live activity" "$OUT/logs/live_panel.err" || { echo "::error::live activity start did not run"; fail=1; }
 echo "player-material pixel-buffer errors: $(grep -c "Could not get pixel buffer" "$OUT/logs/oslog.txt")"
 echo "--- SceneKit error lines (all, deduplicated) ---"
 grep -h "SceneKit\]" "$OUT/logs/oslog.txt" | sed 's/^.*\] //' | sort | uniq -c | sort -rn | head -20

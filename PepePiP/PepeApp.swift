@@ -59,6 +59,35 @@ final class AudioKeepAlive {
     }
     private var observing = false
 
+    /// 0.15: right before a push-to-talk take. The session should be playAndRecord since launch; if PiP, another app or a
+    /// route change left it elsewhere, switch back (only the category, the keep-alive keeps running) and activate it.
+    func ensureRecordSession() throws {
+        let s = AVAudioSession.sharedInstance()
+        if s.category != .playAndRecord {
+            Log.add("audio session was \(AudioKeepAlive.categorySummary) at mic start -> playAndRecord")
+            var opts: AVAudioSession.CategoryOptions = [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP]
+            if VoiceIO.useHFPMic { opts.insert(.allowBluetooth) }
+            try s.setCategory(.playAndRecord, mode: .default, options: opts)
+        }
+        try s.setActive(true)
+    }
+
+    static var categorySummary: String {
+        let s = AVAudioSession.sharedInstance()
+        return "\(s.category.rawValue.replacingOccurrences(of: "AVAudioSessionCategory", with: "")) / \(s.mode.rawValue.replacingOccurrences(of: "AVAudioSessionMode", with: "")) / opts \(s.categoryOptions.rawValue)"
+    }
+    static var routeSummary: String {
+        let r = AVAudioSession.sharedInstance().currentRoute
+        let ins = r.inputs.map { "\($0.portType.rawValue)" }.joined(separator: "+")
+        let outs = r.outputs.map { "\($0.portType.rawValue)" }.joined(separator: "+")
+        return "in \(ins.isEmpty ? "none" : ins) -> out \(outs.isEmpty ? "none" : outs)"
+    }
+    static var inputSummary: String {
+        let s = AVAudioSession.sharedInstance()
+        return "\(s.isInputAvailable ? "available" : "NONE") \(s.currentRoute.inputs.first?.portName ?? "-") \(Int(s.sampleRate)) Hz"
+    }
+    var isRunning: Bool { running }
+
     func start() {
         guard !running else { return }
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!

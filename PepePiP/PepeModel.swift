@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.14 nebula" }
+enum BuildInfo { static let tag = "0.15 voice + live activity debug" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, street, nebula, lounge, office, neon, plain
@@ -55,7 +55,7 @@ final class PepeModel: ObservableObject {
     var port: Int { selectedProfile.port }
     @Published var pipMode: PiPMode { didSet { UserDefaults.standard.set(pipMode.rawValue, forKey: "pipMode") } }
     @Published var autoPiP: Bool { didSet { UserDefaults.standard.set(autoPiP, forKey: "autoPiP") } }
-    @Published var liveActivity: Bool { didSet { UserDefaults.standard.set(liveActivity, forKey: "liveActivity") } }
+    @Published var liveActivity: Bool { didSet { UserDefaults.standard.set(liveActivity, forKey: "liveActivity"); if liveActivity { LiveActivityManager.shared.start(liveActivityContent(), reason: "toggle on") } else { refreshLiveActivity(force: true) } } }
     @Published var useDiscovered: Bool { didSet { UserDefaults.standard.set(useDiscovered, forKey: "useDiscovered"); connect() } }
     @Published var discovered: (host: String, port: Int)? = nil
     static let defaultPort = 8777
@@ -72,6 +72,10 @@ final class PepeModel: ObservableObject {
     @Published var micOn: Bool { didSet { UserDefaults.standard.set(micOn, forKey: "micOn"); AudioKeepAlive.shared.configureSession() } }
     @Published var speechLang: String { didSet { UserDefaults.standard.set(speechLang, forKey: "speechLang") } }
     @Published var listening = false
+    /// 0.15: "tap" (tap to start, tap again / 2 s silence to stop; default) or "hold" (press and hold, release to send)
+    @Published var talkMode: String { didSet { UserDefaults.standard.set(talkMode, forKey: "talkMode") } }
+    /// 0.15: use on-device recognition when the locale supports it (falls back to the server on failure)
+    @Published var preferOnDevice: Bool { didSet { UserDefaults.standard.set(preferOnDevice, forKey: "preferOnDevice") } }
     /// 0.13 baked smoke (BakedSmoke.swift): six-way Mantaflow cards instead of particles; brightness; atlas V flip (debug)
     @Published var bakedSmoke: Bool { didSet { UserDefaults.standard.set(bakedSmoke, forKey: "bakedSmoke"); applySmoke() } }
     @Published var smokeBrightness: Double { didSet { UserDefaults.standard.set(smokeBrightness, forKey: "smokeBrightness"); applySmoke() } }
@@ -138,6 +142,8 @@ final class PepeModel: ObservableObject {
         speakReplies = d.object(forKey: "speakReplies") as? Bool ?? true
         micOn = d.object(forKey: "micOn") as? Bool ?? true
         speechLang = d.string(forKey: "speechLang") ?? "auto"
+        talkMode = d.string(forKey: "talkMode") == "hold" ? "hold" : "tap"
+        preferOnDevice = d.object(forKey: "preferOnDevice") != nil ? d.bool(forKey: "preferOnDevice") : true
         showWorkers = d.object(forKey: "showWorkers") as? Bool ?? true
         pepeScale = d.object(forKey: "pepeScale") as? Double ?? 1.0
         _ = TestMode.launch
@@ -212,8 +218,8 @@ final class PepeModel: ObservableObject {
                 self.connected = up
                 if !up { self.synced = false }
                 LiveActivityManager.shared.brainConnected(up)
-                if up { self.refreshLiveActivity(force: true) }
                 self.director.handle(["type": up ? "brain_up" : "brain_down"])
+                self.refreshLiveActivity(force: true)
             }
         }
         c.onEvent = { [weak self] ev in DispatchQueue.main.async { self?.director.handle(ev) } }
@@ -233,7 +239,7 @@ final class PepeModel: ObservableObject {
         director.handle(["type": "user_chat", "text": t, "local": true])
     }
 
-    /// PiP play/pause (0.12): while the brain is idle and connected = push-to-talk (6 s, or a second press stops early);
+    /// PiP play/pause (0.12): while the brain is idle and connected = tap-to-talk (a second press, or 2 s of silence, stops);
     /// otherwise (busy, offline, mic off) the old summary behaviour.
     func playPausePressed() {
         if listening || (micOn && connected && !brainBusy) { voice.toggle(fromPiP: true) } else { requestSummary() }
@@ -285,14 +291,20 @@ final class PepeModel: ObservableObject {
     }
 
     /// Build the Live Activity content from the mirrored fields and push it (the manager throttles and de-duplicates).
+    /// The brain being offline does not end it (0.15): the state says "offline" (or the local smoke break) and the line
+    /// carries the local status, so the Lock Screen keeps showing something.
     func refreshLiveActivity(force: Bool = false) {
         guard sceneLoaded || force else { return }
-        let line = String((lastLine.isEmpty ? status : lastLine).prefix(80))
+        LiveActivityManager.shared.update(liveActivityContent(), enabled: liveActivity)
+    }
+
+    func liveActivityContent() -> PepeActivityAttributes.ContentState {
+        let line = String((connected ? (lastLine.isEmpty ? status : lastLine) : "brain offline" + (lastLine.isEmpty ? "" : " · last: \(lastLine)")).prefix(80))
         let working = agents.filter { $0.state == "working" || $0.state == "thinking" }.count
-        let s = PepeActivityAttributes.ContentState(state: connected ? laState : "sleeping", line: line, tool: String(lastTool.prefix(40)),
-                                                    agentsWorking: working, agentsTotal: agents.count, agentStates: agents.prefix(6).map { $0.state },
-                                                    ok: lastOk, updatedAt: Date())
-        LiveActivityManager.shared.update(s, enabled: liveActivity)
+        let state = connected ? laState : (laState == "smoking" ? "smoking" : "sleeping")
+        return PepeActivityAttributes.ContentState(state: state, line: line, tool: String(lastTool.prefix(40)),
+                                                   agentsWorking: working, agentsTotal: agents.count, agentStates: agents.prefix(6).map { $0.state },
+                                                   ok: lastOk, updatedAt: Date())
     }
 
     /// Lock Screen / Island buttons (LiveActivityIntent, runs in this process; the app may have been launched in the

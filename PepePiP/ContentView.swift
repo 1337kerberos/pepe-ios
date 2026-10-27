@@ -1,5 +1,6 @@
 // SwiftUI shell: the Pepe view (3:4), status line, chat box, PiP/summary buttons, settings sheet with the log.
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var model: PepeModel
@@ -25,9 +26,11 @@ struct ContentView: View {
                 TextField("say something to Pepe", text: $chat).textFieldStyle(.roundedBorder).submitLabel(.send)
                     .onSubmit { model.send(chat: chat); chat = "" }
                 Button("Send") { model.send(chat: chat); chat = "" }.disabled(chat.isEmpty)
-                Button { model.voice.toggle(fromPiP: false) } label: { Image(systemName: model.listening ? "mic.fill" : "mic") }
-                    .buttonStyle(.bordered).tint(model.listening ? .red : .accentColor).disabled(!model.micOn)
+                MicButton(ui: model.voice.ui, hold: model.talkMode == "hold", enabled: model.micOn,
+                          onTap: { model.voice.toggle(fromPiP: false) },
+                          onPress: { model.voice.pressBegan() }, onRelease: { model.voice.pressEnded() })
             }
+            MicPanel(ui: model.voice.ui, hold: model.talkMode == "hold", micOn: model.micOn)
             HStack(spacing: 12) {
                 Button { pipRequest += 1 } label: { Label("Float", systemImage: "pip.enter") }.buttonStyle(.borderedProminent).disabled(!model.sceneLoaded)
                 Button { model.requestSummary() } label: { Label("Summary", systemImage: "text.bubble") }.buttonStyle(.bordered)
@@ -42,6 +45,108 @@ struct ContentView: View {
         }
         .padding()
         .sheet(isPresented: $showSettings) { SettingsView().environmentObject(model) }
+        .onAppear {
+            // simulator screenshots: -openSettings main|debug|live (TestMode.swift)
+            if TestMode.on, TestMode.value("openSettings") != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + (TestMode.time("settingsAt") ?? 2.5)) { showSettings = true }
+            }
+        }
+    }
+}
+
+/// 0.15 mic button: a plain view with its own gestures (a SwiftUI Button only fires on release, so "hold to talk" was
+/// impossible with it). Tap mode: tap = start / stop. Hold mode: finger down starts, finger up sends.
+struct MicButton: View {
+    @ObservedObject var ui: VoiceUI
+    let hold: Bool
+    let enabled: Bool
+    let onTap: () -> Void
+    let onPress: () -> Void
+    let onRelease: () -> Void
+    @State var pressed = false
+
+    var body: some View {
+        let live = ui.phase == .listening
+        let base = Image(systemName: live ? "mic.fill" : "mic")
+            .font(.system(size: 19, weight: .semibold))
+            .frame(width: 48, height: 36)
+            .foregroundStyle(live ? Color.white : (enabled ? Color.accentColor : Color.gray))
+            .background(RoundedRectangle(cornerRadius: 9).fill(live ? Color.red : Color.accentColor.opacity(enabled ? 0.16 : 0.06)))
+            .scaleEffect(pressed || live ? 1.08 : 1)
+            .animation(.easeOut(duration: 0.12), value: live)
+            .contentShape(Rectangle())
+            .accessibilityLabel(hold ? "hold to talk" : (live ? "stop and send" : "tap to talk"))
+            .accessibilityAddTraits(.isButton)
+        if !enabled {
+            base.opacity(0.5)
+        } else if hold {
+            base.gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !pressed { pressed = true; onPress() } }
+                .onEnded { _ in pressed = false; onRelease() })
+        } else {
+            base.onTapGesture { onTap() }
+        }
+    }
+}
+
+/// State label + level meter + live partial transcript + the last result/error line, right under the mic.
+struct MicPanel: View {
+    @ObservedObject var ui: VoiceUI
+    let hold: Bool
+    let micOn: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(label).font(.caption.bold()).foregroundStyle(ui.phase == .error ? .red : .primary)
+                LevelMeter(level: ui.level, active: ui.phase == .listening).frame(width: 70, height: 8)
+                Spacer(minLength: 4)
+                if !ui.route.isEmpty { Text(ui.route).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1) }
+            }
+            if !ui.partial.isEmpty, ui.phase == .listening || ui.phase == .recognizing || ui.phase == .sending {
+                Text("\u{201C}\(ui.partial)\u{201D}").font(.callout).italic().lineLimit(3)
+            }
+            if !ui.line.isEmpty {
+                Text(ui.line).font(.caption).foregroundStyle(ui.lineIsError ? .red : .secondary).lineLimit(3)
+            }
+            if ui.showOpenSettings {
+                Button("Open iOS Settings > Pepe") { if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) } }.font(.caption)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.08)))
+    }
+
+    private var label: String {
+        if !micOn { return "mic off (Settings > Voice)" }
+        switch ui.phase {
+        case .idle: return hold ? "mic idle: hold the mic to talk" : "mic idle: tap the mic to talk"
+        case .listening: return hold ? "listening: release to send" : "listening: tap again to send"
+        default: return ui.label
+        }
+    }
+    private var color: Color {
+        switch ui.phase {
+        case .listening: return .red; case .recognizing, .starting, .asking: return .orange; case .sending, .sent: return .green
+        case .error: return .red; case .idle: return micOn ? .gray : .gray.opacity(0.4)
+        }
+    }
+}
+
+struct LevelMeter: View {
+    let level: Float
+    let active: Bool
+    var body: some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.2))
+                Capsule().fill(level > 0.75 ? Color.orange : Color.green)
+                    .frame(width: max(0, g.size.width * CGFloat(active ? level : 0)))
+                    .animation(.linear(duration: 0.08), value: level)
+            }
+        }
     }
 }
 
@@ -52,10 +157,19 @@ struct SettingsView: View {
     @State private var newHost = ""
     @State private var newPort = "8777"
     @State private var adding = false
+    @State private var path: [String] = {
+        let p = TestMode.on ? (TestMode.value("openSettings") ?? "main") : "main"
+        return p == "main" ? [] : [p]
+    }()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Form {
+                Section {
+                    NavigationLink(value: "debug") { Label("Debug (screenshot this for us)", systemImage: "stethoscope") }
+                    NavigationLink(value: "live") { Label("Live Activity test", systemImage: "platter.filled.top.iphone") }
+                } header: { Text("Diagnostics") } footer: { Text(PepeModel.versionLine + " · " + InstallInfo.kind) }
+                LiveActivityPanel()
                 Section {
                     ForEach(model.profiles) { p in
                         HStack {
@@ -105,9 +219,13 @@ struct SettingsView: View {
                 }
                 Section {
                     Toggle("Speak replies", isOn: $model.speakReplies)
-                    Toggle("Microphone (push-to-talk)", isOn: $model.micOn)
+                    Toggle("Microphone", isOn: $model.micOn)
+                    Picker("Talk mode", selection: $model.talkMode) { Text("Tap to talk").tag("tap"); Text("Hold to talk").tag("hold") }.pickerStyle(.segmented)
                     Picker("Speech language", selection: $model.speechLang) { ForEach(VoiceIO.languages, id: \.id) { Text($0.label).tag($0.id) } }
-                } header: { Text("Voice") } footer: { Text("Mic button (or the PiP play/pause button while Pepe is idle): 6 s of on-device speech recognition, sent as chat. Replies are spoken with the best installed voice for their language (add Enhanced/Premium voices in iOS Settings > Accessibility > Spoken Content). Microphone off = the old playback-only audio session, if PiP misbehaves.") }
+                    Toggle("Prefer on-device recognition", isOn: $model.preferOnDevice)
+                    Text("mic \(Voice.micStatus) · speech \(Voice.speechStatus) · \(model.voice.recognizerSummary)").font(.footnote.monospaced()).foregroundStyle(.secondary)
+                    Button("Open iOS Settings > Pepe (permissions)") { if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) } }.font(.footnote)
+                } header: { Text("Voice") } footer: { Text("Tap to talk: tap the mic, speak, then tap again or just stop talking for 2 s; the words show under the button while you speak. Hold to talk: press and hold, release to send. The PiP play/pause button (while Pepe is idle) works like tap to talk. On-device recognition is used when the language supports it; if it fails the same audio goes to Apple's server recognizer. Replies are spoken with the best installed voice for their language. Microphone off = the old playback-only audio session, if PiP misbehaves.") }
                 Section {
                     Toggle("Reactions", isOn: $model.reactionsOn)
                     HStack {
@@ -125,6 +243,12 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .toolbar { Button("Done") { dismiss() } }
+            .navigationDestination(for: String.self) { page in
+                switch page {
+                case "live": Form { LiveActivityPanel() }.navigationTitle("Live Activity")
+                default: DiagnosticsView(voiceUI: model.voice.ui)
+                }
+            }
         }
     }
 }

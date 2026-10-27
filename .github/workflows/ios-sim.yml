@@ -25,8 +25,8 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate the Xcode project (app only)
-        run: xcodegen generate --spec project.yml
+      - name: Generate the Xcode project (app + PepeWidget, so the Live Activity can draw in the simulator)
+        run: xcodegen generate --spec project-widget.yml
 
       - name: Build for the simulator
         run: |

@@ -52,9 +52,9 @@
 		<true/>
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Push-to-talk: Pepe listens for 6 seconds when you tap the mic and sends what you said to your agent.</string>
+	<string>Talk to Pepe: he listens while you speak after tapping the mic and sends what you said to your agent.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Your push-to-talk words are turned into text on the phone and sent to your agent as a chat message.</string>
+	<string>What you say to Pepe is turned into text (on the phone when possible) and sent to your agent as a chat message.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Pepe connects to the agent brain on your computer.</string>
 	<key>NSBonjourServices</key>

@@ -5,6 +5,9 @@
 //   -testState working|thinking|celebrating|failing|smoking   -stateAt <s since launch, default 2>
 //   -exhaleAt <s>      play the smoke_exhale take from 4.25 s in: the exhale (baked cards or particles) fires at once
 //   -reaction squash|stumble|sleep|wake   -reactAt <s>      -bubble <text>      -smokeDebug 1 (cards drawn as UV + alpha)
+//   0.15: -voiceDemo listening|recognizing|sent|error [-voiceAt <s>]  the mic panel in that state (no audio in the sim)
+//         -talkMode tap|hold   -openSettings main|debug|live [-settingsAt <s>] [-debugAnchor log]
+//         -liveStart <s>      Settings > Live Activity > Start at that time (logs the request result)
 // The brain is never dialled (no Bonjour, no WebSocket), the launch exhale is off, so every run is deterministic.
 import Foundation
 import QuartzCore
@@ -61,5 +64,14 @@ enum TestMode {
         }
         if let b = value("bubble") { at(1, "bubble") { model.setBubble(b, hold: 30) } }
         if value("smokeDebug") == "1" { model.scene.setSmokeDebug(true) }
+        if let v = value("voiceDemo") { at(time("voiceAt") ?? 4, "voice demo \(v)") { model.voice.demo(v) } }
+        if let t = time("liveStart") {
+            at(t, "live activity start") {
+                LiveActivityManager.shared.start(model.liveActivityContent(), reason: "test")
+                let la = LiveActivityManager.shared
+                Log.add("TEST live activity: phase \(la.phase), enabled \(LiveActivityManager.enabled), widget \(LiveActivityManager.widgetPresent), error \(la.lastError.isEmpty ? "none" : la.lastError)")
+            }
+        }
+        Log.add("TEST install: \(InstallInfo.kind), widget \(LiveActivityManager.widgetPresent ? "present" : "missing"), mic \(Voice.micStatus), speech \(Voice.speechStatus), recognizer \(model.voice.recognizerSummary), session \(AudioKeepAlive.categorySummary)")
     }
 }
