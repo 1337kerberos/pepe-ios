@@ -32,10 +32,10 @@ struct ContentView: View {
             }
             MicPanel(ui: model.voice.ui, hold: model.talkMode == "hold", micOn: model.micOn)
             HStack(spacing: 12) {
-                Button { pipRequest += 1 } label: { Label("Float", systemImage: "pip.enter") }.buttonStyle(.borderedProminent).disabled(!model.sceneLoaded)
-                Button { model.requestSummary() } label: { Label("Summary", systemImage: "text.bubble") }.buttonStyle(.bordered)
-                Button { model.stepCard(-1) } label: { Image(systemName: "backward.fill") }.buttonStyle(.bordered).disabled(model.cards.isEmpty)
-                Button { model.stepCard(1) } label: { Image(systemName: "forward.fill") }.buttonStyle(.bordered).disabled(model.cards.isEmpty)
+                Button { pipRequest += 1 } label: { Label("Float", systemImage: "pip.enter").lineLimit(1).fixedSize() }.buttonStyle(.borderedProminent).disabled(!model.sceneLoaded)
+                Button { model.requestSummary() } label: { Label("Summary", systemImage: "text.bubble").lineLimit(1).fixedSize() }.buttonStyle(.bordered)
+                Button { model.stepCard(-1) } label: { Image(systemName: "backward.fill") }.buttonStyle(.bordered).controlSize(.small).disabled(model.cards.isEmpty)
+                Button { model.stepCard(1) } label: { Image(systemName: "forward.fill") }.buttonStyle(.bordered).controlSize(.small).disabled(model.cards.isEmpty)
                 Spacer()
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
@@ -99,10 +99,10 @@ struct MicPanel: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 8, height: 8)
-                Text(label).font(.caption.bold()).foregroundStyle(ui.phase == .error ? .red : .primary)
-                LevelMeter(level: ui.level, active: ui.phase == .listening).frame(width: 70, height: 8)
+                Text(label).font(.caption.bold()).foregroundStyle(ui.phase == .error ? .red : .primary).lineLimit(1).minimumScaleFactor(0.75).layoutPriority(1)
+                LevelMeter(level: ui.level, active: ui.phase == .listening).frame(width: 56, height: 8)
                 Spacer(minLength: 4)
-                if !ui.route.isEmpty { Text(ui.route).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1) }
+                if !ui.route.isEmpty { Text(ui.route).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7) }
             }
             if !ui.partial.isEmpty, ui.phase == .listening || ui.phase == .recognizing || ui.phase == .sending {
                 Text("\u{201C}\(ui.partial)\u{201D}").font(.callout).italic().lineLimit(3)
