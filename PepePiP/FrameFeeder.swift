@@ -40,7 +40,7 @@ final class PepeMetalView: MTKView, MTKViewDelegate {
         guard let scene, let pass = currentRenderPassDescriptor, let drawable = currentDrawable,
               let queue = renderer.commandQueue, let cmd = queue.makeCommandBuffer() else { return }
         renderer.pointOfView = scene.rootNode.childNode(withName: "pepeCamera", recursively: false)
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 1)
+        pass.colorAttachments[0].clearColor = PepeScene.metalClearColor
         renderer.render(atTime: CACurrentMediaTime(), viewport: CGRect(origin: .zero, size: drawableSize), commandBuffer: cmd, passDescriptor: pass)
         cmd.present(drawable)
         cmd.commit()
@@ -102,7 +102,7 @@ final class PixelBufferFeeder {
               let cvTex, let tex = CVMetalTextureGetTexture(cvTex), let queue = renderer.commandQueue, let cmd = queue.makeCommandBuffer() else { return }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = tex; pass.colorAttachments[0].loadAction = .clear; pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 1)
+        pass.colorAttachments[0].clearColor = PepeScene.metalClearColor
         pass.depthAttachment.texture = depth; pass.depthAttachment.loadAction = .clear; pass.depthAttachment.storeAction = .dontCare; pass.depthAttachment.clearDepth = 1
         renderer.pointOfView = scene.rootNode.childNode(withName: "pepeCamera", recursively: false)
         renderer.render(atTime: CACurrentMediaTime(), viewport: CGRect(origin: .zero, size: size), commandBuffer: cmd, passDescriptor: pass)

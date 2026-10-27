@@ -59,9 +59,17 @@ struct SettingsView: View {
                 }
                 Section("Picture in Picture") {
                     Picker("Path", selection: $model.pipMode) { ForEach(PiPMode.allCases) { Text($0.label).tag($0) } }
+                    Picker("Card", selection: $model.cardSize) { ForEach(CardSize.allCases) { Text($0.label).tag($0) } }
+                    Text("iOS picks the card's on-screen size from its aspect; pinch the card to toggle between the two system sizes.").font(.footnote).foregroundStyle(.secondary)
                     Toggle("Start PiP automatically when leaving the app", isOn: $model.autoPiP)
                     Toggle("Live Activity (Dynamic Island) mirror", isOn: $model.liveActivity)
                 }
+                Section("Look") {
+                    HStack { Text("Brightness"); Slider(value: $model.brightness, in: 0.5...2.0, step: 0.05); Text(String(format: "%.2f", model.brightness)).monospacedDigit().frame(width: 44) }
+                    Toggle("Cigar (idle smoke every 45-120 s)", isOn: $model.cigarOn)
+                    Button("Exhale now") { model.director.smokeNow() }.disabled(!model.sceneLoaded)
+                }
+                Section("Build") { Text(PepeModel.versionLine).font(.footnote.monospaced()) }
                 Section("Log") {
                     ScrollView { Text(Log.lines.suffix(80).joined(separator: "\n")).font(.system(size: 10, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading) }
                         .frame(height: 260).id(model.logTick)

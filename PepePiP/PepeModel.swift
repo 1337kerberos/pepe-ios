@@ -3,6 +3,21 @@ import Foundation
 import Combine
 import UIKit
 
+enum BuildInfo { static let tag = "0.2 card-size+brightness+cigar+smoke" }
+
+/// PiP card aspect: sets the sample-buffer frame size and the video-call preferredContentSize (iOS picks the on-screen
+/// size from the aspect; the user pinches the card between the two system sizes).
+enum CardSize: String, CaseIterable, Identifiable {
+    case threeFour, nineSixteen, square
+    var id: String { rawValue }
+    var pixels: CGSize {
+        switch self { case .threeFour: return CGSize(width: 540, height: 720); case .nineSixteen: return CGSize(width: 540, height: 960); case .square: return CGSize(width: 540, height: 540) }
+    }
+    var label: String {
+        switch self { case .threeFour: return "3:4 (540x720)"; case .nineSixteen: return "9:16 portrait, narrower card (540x960)"; case .square: return "1:1 (540x540)" }
+    }
+}
+
 struct Card: Identifiable, Equatable {
     let id = UUID()
     let kind: String   // say | ask | result | tool | status
@@ -18,6 +33,15 @@ final class PepeModel: ObservableObject {
     @Published var pipMode: PiPMode { didSet { UserDefaults.standard.set(pipMode.rawValue, forKey: "pipMode") } }
     @Published var autoPiP: Bool { didSet { UserDefaults.standard.set(autoPiP, forKey: "autoPiP") } }
     @Published var liveActivity: Bool { didSet { UserDefaults.standard.set(liveActivity, forKey: "liveActivity") } }
+    @Published var cardSize: CardSize { didSet { UserDefaults.standard.set(cardSize.rawValue, forKey: "cardSize") } }
+    @Published var brightness: Double { didSet { UserDefaults.standard.set(brightness, forKey: "brightness"); scene.setBrightness(brightness) } }
+    @Published var cigarOn: Bool { didSet { UserDefaults.standard.set(cigarOn, forKey: "cigarOn"); scene.setCigar(on: cigarOn) } }
+
+    /// shown in Settings so builds can be told apart (bump BuildInfo.tag with every change you want to recognise)
+    static let versionLine: String = {
+        let d = Bundle.main.infoDictionary ?? [:]
+        return "PepePiP \(d["CFBundleShortVersionString"] ?? "?") (\(d["CFBundleVersion"] ?? "?")) · \(BuildInfo.tag)"
+    }()
 
     // live state
     @Published var connected = false
@@ -42,12 +66,19 @@ final class PepeModel: ObservableObject {
         pipMode = PiPMode(rawValue: d.string(forKey: "pipMode") ?? "") ?? .auto
         autoPiP = d.object(forKey: "autoPiP") as? Bool ?? true
         liveActivity = d.object(forKey: "liveActivity") as? Bool ?? false
+        cardSize = CardSize(rawValue: d.string(forKey: "cardSize") ?? "") ?? .threeFour
+        brightness = d.object(forKey: "brightness") as? Double ?? 1.4
+        cigarOn = d.object(forKey: "cigarOn") as? Bool ?? true
         director = Director(model: self)
+        Log.add(PepeModel.versionLine)
         Log.onChange = { [weak self] in self?.logTick += 1 }
         scene.load { [weak self] error in
             guard let self else { return }
             if let error { Log.add("glb load failed: \(error)"); self.status = "model failed: \(error.localizedDescription)" }
-            else { self.sceneLoaded = true; self.director.handle(["type": "state", "state": "idle"]) }
+            else {
+                self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn)
+                self.sceneLoaded = true; self.director.handle(["type": "state", "state": "idle"])
+            }
         }
         connect()
     }

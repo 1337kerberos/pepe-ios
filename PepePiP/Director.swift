@@ -9,6 +9,7 @@ enum Clip: String, CaseIterable {
     case think, typing, explain, talkingFunny = "talking_funny", acknowledging, nod = "head_nod_yes"
     case fistPump = "fist_pump", veryHappy = "very_happy", cheering, shakeNo = "shaking_head_no", angry = "standing_angry"
     case wave = "wave_hello", phone = "talking_on_phone", bored
+    case smokeLight = "smoke_light", smokeExhale = "smoke_exhale"   // smoke_light has no boss bake yet: absent from the glb until baked
 
     var loops: Bool {
         switch self {
@@ -26,7 +27,7 @@ let clipAliases: [String: Clip] = [
     "mx_standing_fist_pump": .fistPump, "mx_victory_idle": .veryHappy, "mx_cheering": .cheering, "mx_shaking_head_no": .shakeNo,
     "mx_shrug": .shakeNo, "mx_standing_angry": .angry, "meshy_facepalm": .angry, "cmu_wave_hello": .wave,
     "mx_talking_on_phone": .phone, "mx_bored": .bored, "mx_pointing": .explain, "cmu_stretching": .shift, "mx_look_at_watch": .shift,
-    "mx_drinking": .look,
+    "mx_drinking": .look, "vid_smoke_light": .smokeLight, "vid_smoke_exhale": .smokeExhale,
 ]
 
 final class Director {
@@ -37,6 +38,7 @@ final class Director {
     private var turnHadExec = false
     private var talkFlip = false
     private var idleTimer: Timer?
+    private var smokeTimer: Timer?
 
     init(model: PepeModel) { self.model = model }
 
@@ -96,9 +98,10 @@ final class Director {
 
     private func setState(_ s: String) {
         currentState = s
+        if s != "idle" { smokeTimer?.invalidate() }
         switch s {
         case "idle":
-            model.brainBusy = false; loop(.idle); model.setStatus("idle"); scheduleIdleLife()
+            model.brainBusy = false; loop(.idle); model.setStatus("idle"); scheduleIdleLife(); scheduleSmoke()
         case "thinking":
             model.brainBusy = true; loop(.think); model.setStatus("thinking")
         case "working":
@@ -142,7 +145,8 @@ final class Director {
             let verb = (b["verb"] as? String) ?? ""
             let raw = ((b["clip"] as? String) ?? "").split(separator: "@").first.map(String.init) ?? ""
             let isLoop = (b["loop"] as? Bool) ?? false
-            if let clip = clipAliases[raw], !isLoop, ["react", "emote", "celebrate", "use_prop"].contains(verb) {
+            if let clip = clipAliases[raw], !isLoop, ["react", "emote", "celebrate", "use_prop"].contains(verb), model.scene.has(clip.rawValue) {
+                if clip == .smokeLight || clip == .smokeExhale { if model.cigarOn { smokeNow() }; continue }
                 let hold = (b["max_hold_s"] as? Double) ?? model.scene.duration(of: clip.rawValue)
                 oneShot(clip, hold: hold)
             }
@@ -168,6 +172,33 @@ final class Director {
 
     private func say(_ text: String, hold: TimeInterval) {
         model.setBubble(String(text.prefix(220)), hold: hold)
+    }
+
+    /// Smoke break, like the desktop idle_life smoke entry: after 45-120 s of idle (cigar on) play smoke_light if it is
+    /// in the glb, then the exhale take (the burst fires at 4.33 s, PepeScene), then back to idle.
+    private func scheduleSmoke() {
+        smokeTimer?.invalidate()
+        smokeTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 45...120), repeats: false) { [weak self] _ in
+            guard let self, self.currentState == "idle", self.model.cigarOn else { return }
+            self.smokeNow()
+            self.scheduleSmoke()
+        }
+    }
+
+    func smokeNow() {
+        guard model.scene.has(Clip.smokeExhale.rawValue) else { Log.add("no smoke take in the glb"); return }
+        idleTimer?.invalidate()
+        let exhale = { [weak self] in
+            guard let self else { return }
+            self.oneShot(.smokeExhale, hold: self.model.scene.duration(of: Clip.smokeExhale.rawValue)) { [weak self] in
+                guard let self else { return }
+                self.model.scene.play(self.baseLoop.rawValue, loop: true)
+                if self.currentState == "idle" { self.scheduleIdleLife() }
+            }
+        }
+        if model.scene.has(Clip.smokeLight.rawValue) {
+            oneShot(.smokeLight, hold: model.scene.duration(of: Clip.smokeLight.rawValue), then: exhale)
+        } else { exhale() }
     }
 
     /// idle_life: every 8-20 s of idle play a short variation, then return to the base idle.

@@ -8,7 +8,8 @@ import Combine
 final class PepeViewController: UIViewController {
     let model = PepeModel.shared
     private let pip = PiPManager()
-    private let feeder = PixelBufferFeeder()
+    private var feeder = PixelBufferFeeder()
+    private var cardPixels = CardSize.threeFour.pixels
     private let sourceView = UIView()                 // what the PiP card animates from (always on screen)
     private let scnView = SCNView()                   // in-app display for the video-call mode
     private let sampleView = SampleBufferView()       // in-app display + PiP content for the sample-buffer mode
@@ -40,9 +41,9 @@ final class PepeViewController: UIViewController {
             self.model.pipMode = .sampleBuffer
         }
 
-        model.$sceneLoaded.combineLatest(model.$pipMode, model.$autoPiP)
+        model.$sceneLoaded.combineLatest(model.$pipMode, model.$autoPiP, model.$cardSize)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] loaded, mode, auto in if loaded { self?.configure(mode: mode.resolved, autoStart: auto) } }
+            .sink { [weak self] loaded, mode, auto, size in if loaded { self?.configure(mode: mode.resolved, autoStart: auto, size: size.pixels) } }
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
@@ -51,27 +52,30 @@ final class PepeViewController: UIViewController {
             .sink { [weak self] _ in Log.add("foreground; PiP active=\(self?.pip.isActive ?? false)") }.store(in: &cancellables)
     }
 
-    private func configure(mode: PiPMode, autoStart: Bool) {
-        guard mode != activeMode || pip.controller == nil else { pip.controller?.canStartPictureInPictureAutomaticallyFromInline = autoStart; return }
-        activeMode = mode
+    private func configure(mode: PiPMode, autoStart: Bool, size: CGSize) {
+        guard mode != activeMode || size != cardPixels || pip.controller == nil else { pip.controller?.canStartPictureInPictureAutomaticallyFromInline = autoStart; return }
+        if pip.isActive { pip.stop() }   // a size/mode change while the card is up: stop it, the user re-floats
+        activeMode = mode; cardPixels = size
         feeder.stop(); pip.teardown()
         scnView.isHidden = true; sampleView.isHidden = true
+        Log.add("configure \(mode.rawValue) \(Int(size.width))x\(Int(size.height))")
         switch mode {
         case .videoCall:
             scnView.scene = model.scene.scene
             scnView.pointOfView = model.scene.cameraNode
             scnView.isHidden = false
             if #available(iOS 18, *) {
-                let mv = PepeMetalView(frame: CGRect(x: 0, y: 0, width: 540, height: 720))
+                let mv = PepeMetalView(frame: CGRect(origin: .zero, size: size))
                 mv.scene = model.scene.scene
                 metalView = mv
-                pip.setupVideoCall(sourceView: sourceView, content: mv, contentSize: CGSize(width: 540, height: 720), autoStart: autoStart)
+                pip.setupVideoCall(sourceView: sourceView, content: mv, contentSize: size, autoStart: autoStart)
             } else {
                 Log.add("MTKView PiP needs iOS 18; using the sample-buffer path")
                 model.pipMode = .sampleBuffer
             }
         case .sampleBuffer, .auto:
             sampleView.isHidden = false
+            feeder = PixelBufferFeeder(size: size)
             feeder.start(scene: model.scene.scene, layer: sampleView.displayLayer)
             pip.setupSampleBuffer(layer: sampleView.displayLayer, autoStart: autoStart)
         }

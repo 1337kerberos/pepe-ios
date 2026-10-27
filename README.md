@@ -17,9 +17,11 @@ ios/
   project.yml                       XcodeGen spec: app target, iOS 17+, Swift language mode 5, GLTFKit2 via SPM
   project-widget.yml                same + the PepeWidget Live Activity extension (optional, second App ID)
   .github/workflows/ios.yml         macos-14 runner: xcodegen -> xcodebuild archive (unsigned) -> Payload zip -> .ipa artifact
-  Assets/pepe.glb                   9 MB: boss model + 18 clips embedded, no meshopt/quantization (built by tools/make_pepe_glb.py)
+  Assets/pepe.glb                   9.7 MB: boss model + cigar + 19 clips embedded, no meshopt/quantization (tools/make_pepe_glb.py)
+  Assets/puff.png                   64x64 soft radial sprite for the smoke particles (tools/make_puff.py)
   Assets/README.md                  what is in the glb and how to regenerate it
   tools/make_pepe_glb.py            builds Assets/pepe.glb from the existing bakes (pure Python, no Godot, no gltfpack)
+  tools/make_puff.py                builds Assets/puff.png
   PepePiP/
     PepeApp.swift                   @main App, AppDelegate (audio session), AudioKeepAlive (silent loop while in PiP), Log
     PepeModel.swift                 ObservableObject hub: settings (host/port/PiP mode), status, bubble, cards, summary request
@@ -68,6 +70,25 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   active. App Store caveat: Apple rejects silent-audio keep-alives (2.5.4) and non-video PiP is a grey area; irrelevant
   for a sideloaded prototype.
 - **Live Activity** (optional): emoji per state + last line in the Dynamic Island / Lock Screen; needs the widget target.
+- **Card size** (Settings > Card): 3:4 (540x720, default), 9:16 portrait (540x960, a narrower card on iOS) or 1:1
+  (540x540); sets the sample-buffer frame size and the video-call `preferredContentSize`. iOS derives the on-screen size
+  from the aspect; **pinch the card** to toggle between the two system sizes, drag it to a corner, or swipe it off the
+  edge to stash it.
+- **Brightness** (Settings > Look): a 0.5-2.0 slider (default 1.4) scaling the key (warm 1200), fill (cool 400), rim (600)
+  and ambient (350) lights; the clear colour is a lighter slate (0.16, 0.18, 0.24).
+- **Cigar + smoke** (Settings > Look > Cigar, default on): the glb keeps the skinned cigar (PROP_mesh, PROP_cigar bone)
+  and `tools/make_pepe_glb.py` bakes hand-relative `PROP_cigar` tracks into every non-smoke clip (grip sampled at frame 0
+  of the exhale take, the trick `web/smoke.js` does per frame), so the cigar stays in the right hand in every clip and
+  blends like any bone. A tip wisp (`SCNParticleSystem`, 12/s, 2.5 s, soft `Assets/puff.png` sprite) sits at the cigar tip;
+  the exhale take fires an 80-particle burst from the lips (Head-space midpoint of `Lip_T_C`/`Lip_B_C`) at 4.33 s, blown
+  forward, up and to his right. `Director` plays the take after 45-120 s of idle (and on the brain's `vid_smoke_*` beats);
+  "Exhale now" in Settings triggers it by hand. Budget: ~110 live particles max.
+  `smoke_light` is wired in but **absent from the glb**: there is no boss bake of `vid_smoke_light` yet
+  (`out/wip/web_boss/baked/` has none; `retarget_lab/anims/vid_smoke_light.glb` is only the source). Bake it with
+  `PEPE_CHAR=pepe_mr_fm PEPE_PROPS=smoke bake.gd`, add `'smoke_light': ('vid_smoke_light', ...)` to NAMES in
+  `web/make_clips_boss.py`, rerun it and `tools/make_pepe_glb.py`; the app then plays light -> exhale automatically.
+- **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
+  first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 
 ## The glb (why a new one, and the one-line export change)
 
@@ -75,8 +96,8 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
 separate animation-only glbs. GLTFKit2's README lists `EXT_meshopt_compression` and `KHR_mesh_quantization` as supported,
 but the iOS path is untested, so the app ships a plain float32 glb with the clips embedded:
 `tools/make_pepe_glb.py` = `web/make_clips_boss.py`'s model step **without** gltfpack + a by-name merge of the clips'
-raw (pre-gltfpack) animation glbs. It was run here; `Assets/pepe.glb` is ready (9.06 MB, 18 animations, extensions used:
-only `KHR_materials_emissive_strength`).
+raw (pre-gltfpack) animation glbs + baked in-hand cigar tracks. It was run here; `Assets/pepe.glb` is ready (9.73 MB,
+19 animations incl. `smoke_exhale`, extensions used: only `KHR_materials_emissive_strength`).
 
 If you would rather produce it from `web/make_clips_boss.py`: in `make_model()` and `make_clip()` remove `'-cc'` from the
 gltfpack argv (keep `-kn`, `-ac -af 24`); that drops meshopt and quantization. Then merge the resulting clip glbs into the
@@ -88,7 +109,7 @@ idle_breathing (mx_idle_breathing), think (mx_thinking), typing (mx_typing@0-8),
 talking_funny (mx_talking_funny), acknowledging (mx_acknowledging), head_nod_yes (mx_head_nod_yes),
 fist_pump (mx_standing_fist_pump), very_happy (mx_victory_idle), cheering (mx_cheering), shaking_head_no
 (mx_shaking_head_no), standing_angry (mx_standing_angry@0-9), wave_hello (cmu_wave_hello), talking_on_phone
-(mx_talking_on_phone@0-12), bored (mx_bored). The smoke take is left out (no PROP skin on the phone).
+(mx_talking_on_phone@0-12), bored (mx_bored), smoke_exhale (vid_smoke_exhale, with its own PROP tracks).
 
 ## Build on GitHub Actions (free for public repos)
 
