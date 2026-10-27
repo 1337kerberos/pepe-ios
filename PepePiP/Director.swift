@@ -64,6 +64,7 @@ final class Director {
             setState((ev["state"] as? String) ?? "idle")
         case "text":
             let clean = text.replacingOccurrences(of: #"\s*\[\w+\]"#, with: "", options: .regularExpression)
+            model.lastLine = clean
             loop(talkFlip ? .talkingFunny : .explain); talkFlip.toggle()
             say(clean, hold: min(20, 6 + 0.03 * Double(clean.count)))
             model.addCard("say", clean)
@@ -72,6 +73,8 @@ final class Director {
         case "result":
             let ok = (ev["ok"] as? Bool) ?? false
             let summary = (ev["summary"] as? String) ?? ""
+            model.lastOk = ok; model.laState = ok ? "celebrating" : "failing"
+            if !summary.isEmpty { model.lastLine = summary }
             if ok {
                 oneShot(turnHadExec ? .fistPump : .nod, hold: turnHadExec ? 3.8 : 1.5)
                 model.setStatus("done")
@@ -83,6 +86,7 @@ final class Director {
             model.addCard("result", summary)
             turnHadExec = false
         case "ask":
+            model.laState = "waiting"; model.lastLine = "? \(text)"
             loop(.think)
             say("? \(text)", hold: 20)
             model.setStatus("needs you")
@@ -110,6 +114,16 @@ final class Director {
         currentState = s
         if s != "idle" { smokeTimer?.invalidate() }
         switch s {
+        case "thinking": model.laState = "thinking"
+        case "working", "talking": model.laState = "working"
+        case "idle":
+            // keep "celebrating"/"failing" on the Island until the reaction one-shot has played out, then idle
+            let wait = max(0, oneShotUntil - CACurrentMediaTime())
+            if wait == 0 || (model.laState != "celebrating" && model.laState != "failing") { model.laState = "idle" }
+            else { DispatchQueue.main.asyncAfter(deadline: .now() + wait + 0.1) { [weak self] in if let self, self.currentState == "idle", self.model.laState != "smoking" { self.model.laState = "idle" } } }
+        default: break
+        }
+        switch s {
         case "idle":
             model.brainBusy = false; loop(.idle); model.setStatus("idle")
             if model.synced { idleTimer?.invalidate(); smokeTimer?.invalidate() } else { scheduleIdleLife(); scheduleSmoke() }   // synced: the brain sends idle_life beats
@@ -134,6 +148,7 @@ final class Director {
         let summary = String(((ev["summary"] as? String) ?? "").prefix(60))
         switch phase {
         case "start":
+            model.lastTool = summary.isEmpty ? name : "\(name) \(summary)"
             let exec = ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "desktop_type", "desktop_click"].contains(name)
             if exec { turnHadExec = true }
             let web = ["WebFetch", "WebSearch", "Agent", "Task"].contains(name)
@@ -227,10 +242,12 @@ final class Director {
     func smokeNow() {
         guard model.scene.has(Clip.smokeExhale.rawValue) else { Log.add("no smoke take in the glb"); return }
         idleTimer?.invalidate()
+        if currentState == "idle" { model.laState = "smoking" }
         let exhale = { [weak self] in
             guard let self else { return }
             self.oneShot(.smokeExhale, hold: self.model.scene.duration(of: Clip.smokeExhale.rawValue)) { [weak self] in
                 guard let self else { return }
+                if self.model.laState == "smoking" { self.model.laState = "idle" }
                 self.model.scene.play(self.baseLoop.rawValue, loop: true)
                 if self.currentState == "idle" { self.scheduleIdleLife() }
             }

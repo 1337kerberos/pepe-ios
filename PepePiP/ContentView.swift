@@ -86,7 +86,7 @@ struct SettingsView: View {
                     Picker("Card", selection: $model.cardSize) { ForEach(CardSize.allCases) { Text($0.label).tag($0) } }
                     Text("iOS picks the card's on-screen size from its aspect; pinch the card to toggle between the two system sizes.").font(.footnote).foregroundStyle(.secondary)
                     Toggle("Start PiP automatically when leaving the app", isOn: $model.autoPiP)
-                    Toggle("Live Activity (Dynamic Island) mirror", isOn: $model.liveActivity)
+                    Toggle("Live Activity (Lock Screen + Dynamic Island)", isOn: $model.liveActivity)
                 }
                 Section("Look") {
                     Picker("Background", selection: $model.background) { ForEach(Background.allCases) { Text($0.label).tag($0) } }

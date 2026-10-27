@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.8 ops-center" }
+enum BuildInfo { static let tag = "0.9 live-activity" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, lounge, office, neon, plain
@@ -67,7 +67,12 @@ final class PepeModel: ObservableObject {
     @Published var background: Background { didSet { UserDefaults.standard.set(background.rawValue, forKey: "background"); scene.setBackground(background) } }
     @Published var showWorkers: Bool { didSet { UserDefaults.standard.set(showWorkers, forKey: "showWorkers"); scene.setWorkers(agents, enabled: showWorkers) } }
     /// Claude Code sessions on the laptop (from hello.agents and {"type":"agents"}); the brain's own session is the main Pepe
-    @Published var agents: [AgentInfo] = [] { didSet { if sceneLoaded { scene.setWorkers(agents, enabled: showWorkers) } } }
+    @Published var agents: [AgentInfo] = [] { didSet { if sceneLoaded { scene.setWorkers(agents, enabled: showWorkers) }; refreshLiveActivity() } }
+    // mirrored into the Live Activity
+    var laState = "idle" { didSet { refreshLiveActivity() } }     // idle | thinking | working | waiting | celebrating | failing | smoking | sleeping
+    var lastLine = "" { didSet { refreshLiveActivity() } }
+    var lastTool = "" { didSet { refreshLiveActivity() } }
+    var lastOk: Bool? = nil { didSet { refreshLiveActivity() } }
     private var pruneTimer: Timer?
 
     /// shown in Settings so builds can be told apart (bump BuildInfo.tag with every change you want to recognise)
@@ -103,7 +108,7 @@ final class PepeModel: ObservableObject {
         useDiscovered = d.object(forKey: "useDiscovered") as? Bool ?? true
         pipMode = PiPMode(rawValue: d.string(forKey: "pipMode") ?? "") ?? .auto
         autoPiP = d.object(forKey: "autoPiP") as? Bool ?? true
-        liveActivity = d.object(forKey: "liveActivity") as? Bool ?? false
+        liveActivity = d.object(forKey: "liveActivity") as? Bool ?? true
         cardSize = CardSize(rawValue: d.string(forKey: "cardSize") ?? "") ?? .threeFour
         brightness = d.object(forKey: "brightness") as? Double ?? 1.4
         cigarOn = d.object(forKey: "cigarOn") as? Bool ?? true
@@ -174,6 +179,8 @@ final class PepeModel: ObservableObject {
                 guard let self else { return }
                 self.connected = up
                 if !up { self.synced = false }
+                LiveActivityManager.shared.brainConnected(up)
+                if up { self.refreshLiveActivity(force: true) }
                 self.director.handle(["type": up ? "brain_up" : "brain_down"])
             }
         }
@@ -236,6 +243,41 @@ final class PepeModel: ObservableObject {
     func setStatus(_ s: String) {
         status = s
         scene.setStatus(s)
-        LiveActivityManager.shared.update(state: director.currentState, line: s, enabled: liveActivity)
+        refreshLiveActivity()
+    }
+
+    /// Build the Live Activity content from the mirrored fields and push it (the manager throttles and de-duplicates).
+    func refreshLiveActivity(force: Bool = false) {
+        guard sceneLoaded || force else { return }
+        let line = String((lastLine.isEmpty ? status : lastLine).prefix(80))
+        let working = agents.filter { $0.state == "working" || $0.state == "thinking" }.count
+        let s = PepeActivityAttributes.ContentState(state: connected ? laState : "sleeping", line: line, tool: String(lastTool.prefix(40)),
+                                                    agentsWorking: working, agentsTotal: agents.count, agentStates: agents.prefix(6).map { $0.state },
+                                                    ok: lastOk, updatedAt: Date())
+        LiveActivityManager.shared.update(s, enabled: liveActivity)
+    }
+
+    /// Lock Screen / Island buttons (LiveActivityIntent, runs in this process; the app may have been launched in the
+    /// background for it, so wait briefly for the brain socket before sending).
+    func handleIntent(_ action: String) async {
+        Log.add("intent: \(action) (connected \(connected))")
+        var waited = 0
+        while !connected, waited < 12 { try? await Task.sleep(nanoseconds: 500_000_000); waited += 1 }
+        await MainActor.run {
+            switch action {
+            case "where": self.requestWhere()
+            default: self.requestSummary()
+            }
+        }
+    }
+
+    /// "Where": which directory / which step; like the summary, local card while the brain is busy or away.
+    func requestWhere() {
+        if brainBusy || !connected {
+            let cwd = agents.first?.cwd ?? ""
+            showCard(Card(kind: "status", text: "here: \(status)\(cwd.isEmpty ? "" : " · \(cwd)")"))
+        } else {
+            send(chat: "In one short line: where are you right now (which directory, which file or step)?")
+        }
     }
 }

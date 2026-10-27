@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       widget:
-        description: "include the PepeWidget Live Activity extension (second App ID)"
+        description: "include the PepeWidget Live Activity extension (second App ID; install with iLoader, not LiveContainer)"
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build:
@@ -29,8 +29,9 @@ jobs:
 
       - name: Generate the Xcode project
         run: |
-          SPEC=project.yml
-          if [ "${{ github.event.inputs.widget }}" = "true" ]; then SPEC=project-widget.yml; fi
+          SPEC=project-widget.yml          # default since 0.9: app + Live Activity extension
+          if [ "${{ github.event.inputs.widget }}" = "false" ]; then SPEC=project.yml; fi
+          echo "spec: $SPEC"
           xcodegen generate --spec "$SPEC"
           ls
 
@@ -63,7 +64,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PepePiP-unsigned-ipa
+          name: PepePiP-unsigned-ipa-${{ github.event.inputs.widget == 'false' && 'app-only' || 'with-widget' }}
           path: build/PepePiP-unsigned.ipa
           if-no-files-found: error
 
