@@ -98,8 +98,8 @@ final class PepeModel: ObservableObject {
         var list = BrainProfile.builtIns
         if let data = d.data(forKey: "profiles"), let user = try? JSONDecoder().decode([BrainProfile].self, from: data) { list += user.filter { !$0.builtIn } }
         profiles = list
-        selectedProfileId = d.string(forKey: "selectedProfile") ?? BrainProfile.builtIns[0].id
-        if !list.contains(where: { $0.id == selectedProfileId }) { selectedProfileId = BrainProfile.builtIns[0].id }
+        let savedSel = d.string(forKey: "selectedProfile") ?? BrainProfile.builtIns[0].id
+        selectedProfileId = list.contains(where: { $0.id == savedSel }) ? savedSel : BrainProfile.builtIns[0].id
         useDiscovered = d.object(forKey: "useDiscovered") as? Bool ?? true
         pipMode = PiPMode(rawValue: d.string(forKey: "pipMode") ?? "") ?? .auto
         autoPiP = d.object(forKey: "autoPiP") as? Bool ?? true
