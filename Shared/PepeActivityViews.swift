@@ -69,10 +69,10 @@ struct AskButtons: View {
         if ask.sent.isEmpty {
             HStack(spacing: 10) {
                 Button(intent: PepeAskAnswerIntent(askId: ask.id, answer: "allow")) {
-                    Label("Allow", systemImage: "checkmark").frame(maxWidth: .infinity, minHeight: height - 14)
+                    Label("Allow", systemImage: "checkmark").foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: height - 14)
                 }.tint(.green)
                 Button(intent: PepeAskAnswerIntent(askId: ask.id, answer: "deny")) {
-                    Label("Deny", systemImage: "xmark").frame(maxWidth: .infinity, minHeight: height - 14)
+                    Label("Deny", systemImage: "xmark").foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: height - 14)
                 }.tint(.red)
             }
             .buttonStyle(.borderedProminent).font(.subheadline.bold())
@@ -102,7 +102,7 @@ struct AskLockView: View {
                         AskCountdown(expires: ask.expires).font(.caption.bold()).foregroundStyle(.orange).frame(width: 46, alignment: .trailing)
                     }
                     Text(ask.source + (more > 0 ? "  +\(more) more" : "")).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
-                    Text(ask.text).font(.subheadline).foregroundStyle(.white.opacity(0.92)).lineLimit(2).minimumScaleFactor(0.85)
+                    Text(ask.shortText).font(.subheadline).foregroundStyle(.white.opacity(0.92)).lineLimit(2).minimumScaleFactor(0.85)
                 }
             }
             AskButtons(ask: ask)

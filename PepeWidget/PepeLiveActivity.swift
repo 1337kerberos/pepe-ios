@@ -26,7 +26,7 @@ struct PepeLiveActivity: Widget {
                                 Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange).symbolEffect(.pulse, options: .repeating)
                                 Text("Needs your OK").font(.headline).lineLimit(1)
                             }
-                            Text(ask.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            Text(ask.shortText).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 2) {

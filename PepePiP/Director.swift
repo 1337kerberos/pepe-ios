@@ -157,7 +157,15 @@ final class Director {
             model.addCard("ask", text)
             if let a = model.parseAsk(ev) { model.addAsk(a) }                 // 0.16: Allow / Deny card + Lock Screen
         case "ask_resolved":
-            model.resolveAsk((ev["id"] as? String) ?? "", answer: (ev["answer"] as? String) ?? "", by: (ev["by"] as? String) ?? "")
+            let id = (ev["id"] as? String) ?? "", answer = (ev["answer"] as? String) ?? ""
+            guard model.asks.contains(where: { $0.id == id }) else { break }
+            model.resolveAsk(id, answer: answer, by: (ev["by"] as? String) ?? "")
+            if model.asks.isEmpty {                                         // the question is gone: bubble, status, pose
+                if model.bubble?.hasPrefix("? ") == true { model.setBubble(nil, hold: 0) }
+                model.setStatus(answer == "allow" ? "allowed" : answer == "deny" ? "denied" : "no answer")
+                if !model.brainBusy { loop(idleClip) }
+                if answer == "allow" { oneShot(.nod, hold: 1.2) } else if answer == "deny" { oneShot(.acknowledging, hold: 1) }
+            }
         case "snapshot":
             if let list = ev["asks"] as? [[String: Any]] { model.setAsks(list) }
         case "point":

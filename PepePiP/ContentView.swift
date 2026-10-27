@@ -76,11 +76,11 @@ struct AskCardView: View {
                 Spacer(minLength: 4)
                 AskCountdown(expires: ask.expires).font(.callout.bold()).foregroundStyle(.orange).frame(width: 52, alignment: .trailing)
             }
-            Text(ask.text).font(.body).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            Text(ask.shortText).font(.body).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             if ask.sent.isEmpty {
                 HStack(spacing: 10) {
-                    Button { answer("allow") } label: { Label("Allow", systemImage: "checkmark").frame(maxWidth: .infinity, minHeight: 30) }.tint(.green)
-                    Button { answer("deny") } label: { Label("Deny", systemImage: "xmark").frame(maxWidth: .infinity, minHeight: 30) }.tint(.red)
+                    Button { answer("allow") } label: { Label("Allow", systemImage: "checkmark").foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 30) }.tint(.green)
+                    Button { answer("deny") } label: { Label("Deny", systemImage: "xmark").foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 30) }.tint(.red)
                 }
                 .buttonStyle(.borderedProminent).font(.headline).disabled(!connected)
             } else {
@@ -295,7 +295,8 @@ struct SettingsView: View {
                             LockScreenView(state: model.liveActivityContent())
                                 .background(RoundedRectangle(cornerRadius: 22).fill(Color(red: 0.09, green: 0.11, blue: 0.16)))
                                 .environment(\.colorScheme, .dark)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6))
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .listRowBackground(Color.clear)
                         } header: { Text("Lock Screen preview") } footer: { Text("The same view the widget draws (live content). With a question pending its Allow / Deny buttons work here too.") }
                         LiveActivityPanel()
                     }.navigationTitle("Live Activity")

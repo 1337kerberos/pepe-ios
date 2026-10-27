@@ -35,6 +35,15 @@ struct PepeAsk: Codable, Hashable, Identifiable {
     var expires: Date
     var sent: String = ""
 
+    /// the question without the "<cwd> wants to " lead-in when the source line already names the cwd:
+    /// "Run: git push origin main (changes git history or the remote)"
+    var shortText: String {
+        let lead = "\(cwd) wants to "
+        guard origin != "brain", !cwd.isEmpty, text.hasPrefix(lead) else { return text }
+        let rest = String(text.dropFirst(lead.count))
+        return rest.prefix(1).uppercased() + rest.dropFirst()
+    }
+
     /// one short line naming who asks: "solana-microstructure · Bash" or "Pepe"
     var source: String {
         if origin == "brain" { return kind == "tool" && !tool.isEmpty ? "Pepe · \(tool)" : "Pepe" }
