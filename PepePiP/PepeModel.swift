@@ -16,13 +16,13 @@ enum Background: String, CaseIterable, Identifiable {
 /// PiP card aspect: sets the sample-buffer frame size and the video-call preferredContentSize (iOS picks the on-screen
 /// size from the aspect; the user pinches the card between the two system sizes).
 enum CardSize: String, CaseIterable, Identifiable {
-    case threeFour, nineSixteen, square
+    case threeFour, nineSixteen, square, tallSmall
     var id: String { rawValue }
     var pixels: CGSize {
-        switch self { case .threeFour: return CGSize(width: 540, height: 720); case .nineSixteen: return CGSize(width: 540, height: 960); case .square: return CGSize(width: 540, height: 540) }
+        switch self { case .threeFour: return CGSize(width: 540, height: 720); case .nineSixteen: return CGSize(width: 540, height: 960); case .square: return CGSize(width: 540, height: 540); case .tallSmall: return CGSize(width: 270, height: 600) }
     }
     var label: String {
-        switch self { case .threeFour: return "3:4 (540x720)"; case .nineSixteen: return "9:16 portrait, narrower card (540x960)"; case .square: return "1:1 (540x540)" }
+        switch self { case .threeFour: return "3:4 (540x720)"; case .nineSixteen: return "9:16 portrait, narrower card (540x960)"; case .square: return "1:1 (540x540)"; case .tallSmall: return "9:20 tiny feed (270x600), experiment: does iOS give a smaller card?" }
     }
 }
 
