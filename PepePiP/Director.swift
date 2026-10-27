@@ -261,7 +261,7 @@ final class Director {
                 if offset < d { oneShot(clip, hold: d - offset, offset: offset) }
                 continue
             }
-            if let clip, isSmoke { if model.cigarOn, offset < 2 { smokeNow() }; continue }
+            if clip != nil, isSmoke { if model.cigarOn, offset < 2 { smokeNow() }; continue }
             if let clip, !isLoop, ["react", "emote", "celebrate", "use_prop"].contains(verb) {
                 let hold = (b["max_hold_s"] as? Double) ?? model.scene.duration(of: clip.rawValue)
                 if offset < hold { oneShot(clip, hold: hold - offset, offset: offset) }

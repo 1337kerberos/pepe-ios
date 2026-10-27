@@ -71,35 +71,35 @@ final class BakedSmoke {
     float3 l1;
     float3 c1;
     #pragma body
-    constexpr sampler smokeSmp(filter::linear, mip_filter::linear, address::clamp_to_edge);
-    float2 cuv = _surface.diffuseTexcoord;
-    if (flipV > 0.5) cuv.y = 1.0 - cuv.y;
-    float nf = cols * rows;
-    float ff = clamp(frame, 0.0, nf - 1.0);
-    float f0 = floor(ff);
-    float f1 = min(f0 + 1.0, nf - 1.0);
-    float fb = ff - f0;
-    float2 cell = float2(1.0 / cols, 1.0 / rows);
-    float2 uv0 = cuv * cell + float2(fmod(f0, cols) / cols, floor(f0 / cols) / rows);
-    float2 uv1 = cuv * cell + float2(fmod(f1, cols) / cols, floor(f1 / cols) / rows);
-    float4 sa = mix(texA.sample(smokeSmp, uv0, bias(soften)), texA.sample(smokeSmp, uv1, bias(soften)), fb);
-    float4 sb = mix(texB.sample(smokeSmp, uv0, bias(soften)), texB.sample(smokeSmp, uv1, bias(soften)), fb);
-    float alpha = smoothstep(erosion * 0.75, erosion * 0.75 + 0.35, sa.a) * sa.a;
+    constexpr sampler pps_smokeSmp(filter::linear, mip_filter::linear, address::clamp_to_edge);
+    float2 pps_cuv = _surface.diffuseTexcoord;
+    if (flipV > 0.5) pps_cuv.y = 1.0 - pps_cuv.y;
+    float pps_nf = cols * rows;
+    float pps_ff = clamp(frame, 0.0, pps_nf - 1.0);
+    float pps_f0 = floor(pps_ff);
+    float pps_f1 = min(pps_f0 + 1.0, pps_nf - 1.0);
+    float pps_fb = pps_ff - pps_f0;
+    float2 pps_cell = float2(1.0 / cols, 1.0 / rows);
+    float2 pps_uv0 = pps_cuv * pps_cell + float2(fmod(pps_f0, cols) / cols, floor(pps_f0 / cols) / rows);
+    float2 pps_uv1 = pps_cuv * pps_cell + float2(fmod(pps_f1, cols) / cols, floor(pps_f1 / cols) / rows);
+    float4 pps_sa = mix(texA.sample(pps_smokeSmp, pps_uv0, bias(soften)), texA.sample(pps_smokeSmp, pps_uv1, bias(soften)), pps_fb);
+    float4 pps_sb = mix(texB.sample(pps_smokeSmp, pps_uv0, bias(soften)), texB.sample(pps_smokeSmp, pps_uv1, bias(soften)), pps_fb);
+    float pps_alpha = smoothstep(erosion * 0.75, erosion * 0.75 + 0.35, pps_sa.a) * pps_sa.a;
     if (coneOn > 0.5) {
-        float along = (cuv.x - mouthU) / max(0.001, 1.0 - mouthU);
-        float r = 0.018 + 0.7 * max(along, 0.0);
-        float dv = abs(cuv.y - mouthV) * 0.5;
-        alpha *= 1.0 - smoothstep(r, r + 0.14 * (0.3 + along), dv);
-        alpha *= along < 0.0 ? smoothstep(-0.06, 0.0, along) : 1.0;
-        alpha *= mix(0.55, 1.0, smoothstep(0.0, 0.45, along));
+        float pps_along = (pps_cuv.x - mouthU) / max(0.001, 1.0 - mouthU);
+        float pps_r = 0.018 + 0.7 * max(pps_along, 0.0);
+        float pps_dv = abs(pps_cuv.y - mouthV) * 0.5;
+        pps_alpha *= 1.0 - smoothstep(pps_r, pps_r + 0.14 * (0.3 + pps_along), pps_dv);
+        pps_alpha *= pps_along < 0.0 ? smoothstep(-0.06, 0.0, pps_along) : 1.0;
+        pps_alpha *= mix(0.55, 1.0, smoothstep(0.0, 0.45, pps_along));
     }
-    alpha = clamp(alpha * maxAlpha * fade, 0.0, 1.0);
-    float lit0 = max(l0.x, 0.0) * sa.r + max(-l0.x, 0.0) * sa.g + max(l0.y, 0.0) * sa.b
-               + max(-l0.y, 0.0) * sb.r + max(l0.z, 0.0) * sb.g + max(-l0.z, 0.0) * sb.b;
-    float lit1 = max(l1.x, 0.0) * sa.r + max(-l1.x, 0.0) * sa.g + max(l1.y, 0.0) * sa.b
-               + max(-l1.y, 0.0) * sb.r + max(l1.z, 0.0) * sb.g + max(-l1.z, 0.0) * sb.b;
-    float3 col = tint * (ambient * (sa.r + sa.g + sa.b + sb.r + sb.g + sb.b) / 6.0 + (c0 * lit0 + c1 * lit1) * gain);
-    _output.color = float4(col * alpha, alpha);
+    pps_alpha = clamp(pps_alpha * maxAlpha * fade, 0.0, 1.0);
+    float pps_lit0 = max(l0.x, 0.0) * pps_sa.r + max(-l0.x, 0.0) * pps_sa.g + max(l0.y, 0.0) * pps_sa.b
+               + max(-l0.y, 0.0) * pps_sb.r + max(l0.z, 0.0) * pps_sb.g + max(-l0.z, 0.0) * pps_sb.b;
+    float pps_lit1 = max(l1.x, 0.0) * pps_sa.r + max(-l1.x, 0.0) * pps_sa.g + max(l1.y, 0.0) * pps_sa.b
+               + max(-l1.y, 0.0) * pps_sb.r + max(l1.z, 0.0) * pps_sb.g + max(-l1.z, 0.0) * pps_sb.b;
+    float3 pps_col = tint * (ambient * (pps_sa.r + pps_sa.g + pps_sa.b + pps_sb.r + pps_sb.g + pps_sb.b) / 6.0 + (c0 * pps_lit0 + c1 * pps_lit1) * gain);
+    _output.color = float4(pps_col * pps_alpha, pps_alpha);
     """
 
     /// Decode the embedded atlases off the main thread into mipmapped MTLTextures, then build the cards on main.
