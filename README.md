@@ -18,18 +18,15 @@ ios/
   project-widget.yml                same + the PepeWidget Live Activity extension (optional, second App ID)
   .github/workflows/ios.yml         macos-14 runner: xcodegen -> xcodebuild archive (unsigned) -> Payload zip -> .ipa artifact
   Assets/pepe.glb                   9.7 MB: boss model + cigar + 19 clips embedded, no meshopt/quantization (tools/make_pepe_glb.py)
-  Assets/puff.png                   64x64 soft radial sprite for the smoke particles (tools/make_puff.py)
-  Assets/bg_{lounge,office,neon}.png, floor_shadow.png, glow.png   backdrop textures (tools/make_backgrounds.py)
   Assets/README.md                  what is in the glb and how to regenerate it
   tools/make_pepe_glb.py            builds Assets/pepe.glb from the existing bakes (pure Python, no Godot, no gltfpack)
-  tools/make_puff.py                builds Assets/puff.png
-  tools/make_backgrounds.py         builds the backdrop textures
   PepePiP/
     PepeApp.swift                   @main App, AppDelegate (audio session), AudioKeepAlive (silent loop while in PiP), Log
     PepeModel.swift                 ObservableObject hub: settings (host/port/PiP mode), status, bubble, cards, summary request
     BrainClient.swift               URLSessionWebSocketTask client: JSON events in, {"type":"chat"} out, reconnect + pings
     Director.swift                  brain events -> clip (idle/think/typing/explain/celebrate/fail...), status line, bubble, cards
     AppResources.swift              loose-file lookup that survives LiveContainer (Bundle(for:) / main / exe dir / argv0) + asset inventory log
+    Backdrops.swift                 procedural textures (lounge/office/neon backdrops, floor shadow, glow, puff) drawn with Core Graphics
     PepeScene.swift                 SceneKit scene from pepe.glb (GLTFKit2), SCNAnimationPlayer crossfades, 3/4 camera,
                                     soft lights, bubble + status as textured planes inside the 3D frame (visible in PiP)
     FrameFeeder.swift               PepeMetalView (MTKView drawn by SCNRenderer, iOS 18 PiP source) and PixelBufferFeeder
@@ -107,6 +104,16 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   the class's and main executable directories and `argv[0]`'s directory, logs which one answered the first time, and at
   scene setup logs once the resolved paths and an ok/MISSING line per asset. The version line also reads the app's own
   Info.plist rather than the host's.
+- **0.5: procedural textures + bbox framing.** All backdrop/floor/glow/puff textures are drawn with Core Graphics at
+  runtime (`PepePiP/Backdrops.swift`: linear + radial gradients, plusLighter glows, shadow-blurred shapes), so no loose
+  PNG can be missing (the 0.3/0.4 grey card inside LiveContainer); the glb is the only loose file (`AppResources`).
+  The camera is computed from the character's bounding box (`PepeScene.measureCharacter` / `setFraming`): look-at the
+  chest (bbox centre y x 0.95), distance so the body fills 85 % of the card height for the current feed aspect (vertical
+  36 deg FOV, never wider than the card), 3/4 view at 18 deg; `Settings > Look > Pepe scale` (0.6-1.2) scales the
+  distance. The drift is an absolute function of time (+-2 deg yaw around the target, 8 s) evaluated in
+  `renderer(_:updateAtTime:)` on every renderer; the old `SCNAction.moveBy` drift could accumulate when several
+  renderers advanced the same action, which is the likely cause of the 0.3/0.4 "small Pepe in the corner". The neon
+  blobs are placed the same way. The log prints the bbox and the computed camera once per framing change.
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 

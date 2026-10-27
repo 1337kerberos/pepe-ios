@@ -12,6 +12,7 @@ import CoreVideo
 final class PepeMetalView: MTKView, MTKViewDelegate {
     private var renderer: SCNRenderer!
     var scene: SCNScene? { didSet { renderer.scene = scene; renderer.pointOfView = scene?.rootNode.childNode(withName: "pepeCamera", recursively: false) } }
+    weak var frameDelegate: SCNSceneRendererDelegate? { didSet { renderer.delegate = frameDelegate } }
 
     init(frame: CGRect) {
         let dev = MTLCreateSystemDefaultDevice()
@@ -82,9 +83,10 @@ final class PixelBufferFeeder {
         depth = device.makeTexture(descriptor: dd)
     }
 
-    func start(scene: SCNScene, layer: AVSampleBufferDisplayLayer) {
+    func start(scene: SCNScene, layer: AVSampleBufferDisplayLayer, delegate: SCNSceneRendererDelegate? = nil) {
         stop()
         renderer.scene = scene
+        renderer.delegate = delegate
         self.layer = layer
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "pepe.feeder", qos: .userInteractive))
         t.schedule(deadline: .now(), repeating: 1.0 / Double(fps), leeway: .milliseconds(4))

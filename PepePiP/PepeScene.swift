@@ -8,7 +8,7 @@ import GLTFKit2
 import UIKit
 import simd
 
-final class PepeScene {
+final class PepeScene: NSObject, SCNSceneRendererDelegate {
     static let clearColor = UIColor(red: 0.16, green: 0.18, blue: 0.24, alpha: 1)
     static let metalClearColor = MTLClearColor(red: 0.16, green: 0.18, blue: 0.24, alpha: 1)
     static let cigarLength: Float = 0.133          // PROP_cigar: lip end at the bone origin, tip at +Y * length (clips_boss.json)
@@ -23,7 +23,16 @@ final class PepeScene {
     private var background: Background = .lounge
     private var backdrop: SCNNode?
     private var floorNode: SCNNode?
-    private var blobs: [SCNNode] = []
+    private var blobs: [(SCNNode, simd_float3, Float, Float)] = []   // node, base position, period, phase
+    private var cameraNodeRef: SCNNode?
+    private var bbox = (min: simd_float3(-0.4, 0, -0.3), max: simd_float3(0.4, 1.75, 0.3))
+    private var camTarget = simd_float3(0, 0.83, 0)
+    private var camDistance: Float = 2.8
+    private var camAspect: Float = 0.75          // feed width / height
+    private var pepeScale: Float = 1
+    private static let camBaseYaw: Float = 18 * .pi / 180   // 3/4 view: camera on the +Z side, swung toward +X
+    private static let camDriftAmp: Float = 2 * .pi / 180   // +-2 deg
+    private static let camDriftPeriod: Float = 8
     private let bubbleNode = TextPlane(width: 1.25, height: 0.42, pixels: CGSize(width: 750, height: 252), font: 34, color: .black, bg: UIColor(white: 1, alpha: 0.95))
     private let statusNode = TextPlane(width: 1.5, height: 0.14, pixels: CGSize(width: 900, height: 84), font: 36, color: .white, bg: UIColor(white: 0, alpha: 0.45))
     // clips are pre-faced +Z (make_clips_boss.py), so the camera sits on the +Z side
@@ -71,6 +80,7 @@ final class PepeScene {
             players[anim.name] = p
         }
         Log.add("glb: \(players.count) clips: \(players.keys.sorted().joined(separator: " "))")
+        measureCharacter()
         addCameraAndLights()
         addBackdrop()
         bubbleNode.position = SCNVector3(0, 2.02, 0.15); bubbleNode.isHidden = true; scene.rootNode.addChildNode(bubbleNode)
@@ -82,18 +92,12 @@ final class PepeScene {
 
     // MARK: camera, lights, backdrop
     private func addCameraAndLights() {
-        let cam = SCNCamera(); cam.fieldOfView = 36; cam.zNear = 0.05; cam.zFar = 30
+        let cam = SCNCamera(); cam.fieldOfView = 36; cam.projectionDirection = .vertical; cam.zNear = 0.05; cam.zFar = 40
         let camNode = SCNNode(); camNode.camera = cam
-        camNode.position = SCNVector3(0.85 - 0.095, 1.45, 2.65)      // 3/4 front view, slightly above eye level
-        let target = SCNNode(); target.position = SCNVector3(0, 1.15, 0); scene.rootNode.addChildNode(target)
-        let look = SCNLookAtConstraint(target: target); look.isGimbalLockEnabled = true
-        camNode.constraints = [look]
         camNode.name = "pepeCamera"
-        scene.rootNode.addChildNode(camNode)
-        // slow drift: +-2 deg of yaw around the look-at target over an 8 s period, so the card never looks frozen
-        let right = SCNAction.moveBy(x: 0.19, y: 0.02, z: 0, duration: 4); right.timingMode = .easeInEaseOut
-        let left = SCNAction.moveBy(x: -0.19, y: -0.02, z: 0, duration: 4); left.timingMode = .easeInEaseOut
-        camNode.runAction(.repeatForever(.sequence([right, left])), forKey: "drift")
+        scene.rootNode.addChildNode(camNode); cameraNodeRef = camNode
+        setFraming(aspect: camAspect, scale: pepeScale)
+        placeCamera(time: 0)
 
         func add(_ l: SCNLight, _ type: SCNLight.LightType, _ euler: SCNVector3?) {
             l.type = type; l.castsShadow = false
@@ -114,7 +118,7 @@ final class PepeScene {
 
         let floor = SCNPlane(width: 5, height: 5)
         let fm = SCNMaterial(); fm.lightingModel = .constant; fm.blendMode = .alpha; fm.writesToDepthBuffer = false
-        fm.diffuse.contents = PepeScene.image("floor_shadow"); floor.materials = [fm]
+        fm.diffuse.contents = Backdrops.floorShadow; floor.materials = [fm]
         let f = SCNNode(geometry: floor); f.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0); f.position = SCNVector3(0, 0.004, 0.1); f.renderingOrder = -5
         scene.rootNode.addChildNode(f); floorNode = f
 
@@ -122,13 +126,10 @@ final class PepeScene {
         for (i, color) in [UIColor(red: 0.2, green: 1.0, blue: 0.5, alpha: 1), UIColor(red: 0.7, green: 0.3, blue: 1.0, alpha: 1)].enumerated() {
             let g = SCNPlane(width: 3.2, height: 3.2)
             let gm = SCNMaterial(); gm.lightingModel = .constant; gm.blendMode = .add; gm.writesToDepthBuffer = false
-            gm.diffuse.contents = PepeScene.image("glow"); gm.multiply.contents = color; g.materials = [gm]
-            let b = SCNNode(geometry: g); b.position = SCNVector3(i == 0 ? -1.3 : 1.4, i == 0 ? 2.4 : 0.9, -2.4); b.renderingOrder = -8; b.opacity = 0.8
-            let dx: CGFloat = i == 0 ? 0.9 : -0.8, dy: CGFloat = i == 0 ? -0.5 : 0.6, dur: TimeInterval = i == 0 ? 9 : 7
-            let go = SCNAction.moveBy(x: dx, y: dy, z: 0, duration: dur); go.timingMode = .easeInEaseOut
-            let back = SCNAction.moveBy(x: -dx, y: -dy, z: 0, duration: dur); back.timingMode = .easeInEaseOut
-            b.runAction(.repeatForever(.sequence([go, back])))
-            scene.rootNode.addChildNode(b); blobs.append(b)
+            gm.diffuse.contents = Backdrops.glow; gm.multiply.contents = color; g.materials = [gm]
+            let base = simd_float3(i == 0 ? -0.9 : 1.0, i == 0 ? 2.2 : 1.2, -2.4)
+            let b = SCNNode(geometry: g); b.simdPosition = base; b.renderingOrder = -8; b.opacity = 0.8
+            scene.rootNode.addChildNode(b); blobs.append((b, base, i == 0 ? 18 : 14, i == 0 ? 0 : 2.1))   // positions are absolute functions of time (placeCamera)
         }
     }
 
@@ -148,18 +149,66 @@ final class PepeScene {
         for (l, p) in [(keyLight, preset.key), (fillLight, preset.fill), (rimLight, preset.rim), (ambLight, preset.amb)] {
             l.color = p.1; l.intensity = p.0 * CGFloat(brightness)
         }
-        let tex: String? = bg == .plain ? nil : "bg_\(bg.rawValue)"
+        let tex: UIImage?
+        switch bg { case .lounge: tex = Backdrops.lounge; case .office: tex = Backdrops.office; case .neon: tex = Backdrops.neon; case .plain: tex = nil }
         backdrop?.isHidden = tex == nil
-        if let tex { backdrop?.geometry?.firstMaterial?.diffuse.contents = PepeScene.image(tex) }
+        backdrop?.geometry?.firstMaterial?.diffuse.contents = tex ?? UIColor.darkGray
         floorNode?.isHidden = bg == .plain
-        blobs.forEach { $0.isHidden = bg != .neon }
-        Log.add("background \(bg.rawValue) (texture \(tex.map { PepeScene.image($0) != nil ? "ok" : "MISSING" } ?? "none"))")
+        blobs.forEach { $0.0.isHidden = bg != .neon }
+        Log.add("background \(bg.rawValue) (procedural texture \(tex.map { "\(Int($0.size.width))px" } ?? "none"))")
     }
 
     /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity (re-applies the current preset).
     func setBrightness(_ factor: Double) { brightness = factor; setBackground(background) }
 
-    var cameraNode: SCNNode? { scene.rootNode.childNode(withName: "pepeCamera", recursively: false) }
+    var cameraNode: SCNNode? { cameraNodeRef }
+
+    // MARK: framing (camera from the character's bounding box; drift = yaw oscillation around the look-at target)
+    private func measureCharacter() {
+        var lo = simd_float3(repeating: .greatestFiniteMagnitude), hi = simd_float3(repeating: -Float.greatestFiniteMagnitude), n = 0
+        for node in scene.rootNode.childNodes(passingTest: { node, _ in node.geometry != nil }) {
+            let (bmin, bmax) = node.boundingBox; let w = node.simdWorldTransform
+            for c in 0..<8 {
+                let corner = simd_float3(c & 1 == 0 ? bmin.x : bmax.x, c & 2 == 0 ? bmin.y : bmax.y, c & 4 == 0 ? bmin.z : bmax.z)
+                let p = w * simd_float4(corner, 1); lo = simd_min(lo, simd_float3(p.x, p.y, p.z)); hi = simd_max(hi, simd_float3(p.x, p.y, p.z))
+            }
+            n += 1
+        }
+        if n > 0, hi.y - lo.y > 0.3, hi.y - lo.y < 10 { bbox = (lo, hi) }
+        Log.add("character bbox (\(n) meshes): min \(bbox.min) max \(bbox.max)")
+    }
+
+    /// Called with the feed aspect (w/h) whenever the card size changes, and with the "Pepe scale" slider.
+    func setFraming(aspect: Float? = nil, scale: Float? = nil) {
+        if let aspect { camAspect = aspect }
+        if let scale { pepeScale = scale }
+        let size = bbox.max - bbox.min; let centre = (bbox.max + bbox.min) * 0.5
+        let tanHalf = tanf(36 * .pi / 180 / 2)
+        let fill: Float = 0.85
+        let dH = (size.y / fill / 2) / tanHalf                                  // full body = 85 % of the card height
+        let dW = (max(size.x, size.z) / fill / 2) / (tanHalf * camAspect)       // ...and never wider than the card
+        camDistance = max(dH, dW) / max(0.3, pepeScale)
+        camTarget = simd_float3(centre.x, centre.y * 0.95, centre.z)
+        placeCamera(time: CACurrentMediaTime())
+        Log.add("camera: aspect \(camAspect) scale \(pepeScale) target \(camTarget) distance \(camDistance) position \(cameraNodeRef?.simdPosition ?? .zero)")
+    }
+
+    /// Absolute function of time (no accumulating actions): orbit of +-2 deg around the target, 8 s period.
+    private func placeCamera(time: TimeInterval) {
+        guard let cam = cameraNodeRef else { return }
+        let t = Float(time)
+        let yaw = PepeScene.camBaseYaw + PepeScene.camDriftAmp * sinf(2 * .pi * t / PepeScene.camDriftPeriod)
+        let pos = camTarget + simd_float3(sinf(yaw) * camDistance, 0.08 * camDistance, cosf(yaw) * camDistance)
+        cam.simdPosition = pos
+        cam.simdLook(at: camTarget, up: simd_float3(0, 1, 0), localFront: simd_float3(0, 0, -1))
+        for (node, base, period, phase) in blobs where !node.isHidden {
+            node.simdPosition = base + simd_float3(0.9 * sinf(2 * .pi * t / period + phase), 0.5 * sinf(2 * .pi * t / (period * 0.7) + phase), 0)
+        }
+    }
+
+    // SCNSceneRendererDelegate: every renderer (SCNView, MTKView's SCNRenderer, the pixel-buffer feeder) calls this on
+    // its render thread; the camera is a pure function of time, so several renderers can share the scene safely.
+    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) { placeCamera(time: time) }
 
     func duration(of clip: String) -> TimeInterval { durations[clip] ?? 2 }
     func has(_ clip: String) -> Bool { players[clip] != nil }
@@ -209,7 +258,7 @@ final class PepeScene {
             wisp = w
         }
         let puff = PepeScene.puffImage
-        Log.add("cigar: mesh \(propMesh != nil) bone \(cigarBone != nil) head \(headNode != nil) mouth \(mouthInHead); puff texture \(puff.map { "\(Int($0.size.width))x\(Int($0.size.height)) scale \($0.scale)" } ?? "MISSING")")
+        Log.add("cigar: mesh \(propMesh != nil) bone \(cigarBone != nil) head \(headNode != nil) mouth \(mouthInHead); puff texture \(Int(puff.size.width))x\(Int(puff.size.height)) (procedural)")
         setCigar(on: cigarOn)
     }
 
@@ -238,8 +287,7 @@ final class PepeScene {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.8) { node.removeFromParentNode() }
     }
 
-    static func image(_ name: String) -> UIImage? { AppResources.image(name) }
-    private static let puffImage: UIImage? = image("puff")
+    private static let puffImage: UIImage = Backdrops.puff
 
     private static func makeSmoke() -> SCNParticleSystem {
         let s = SCNParticleSystem()

@@ -11,6 +11,6 @@ Clips: idle_standing_a, shifting_weight, look_around, idle_breathing, think, typ
 head_nod_yes, fist_pump, very_happy, cheering, shaking_head_no, standing_angry, wave_hello, talking_on_phone, bored, smoke_exhale
 (smoke_light: no boss bake yet, skipped).
 
-`puff.png`: 64x64 radial-gradient smoke sprite, `../tools/make_puff.py`.
+Textures (backdrops, floor shadow, glow, smoke puff) are drawn in code: `PepePiP/Backdrops.swift`.
 
 Regenerate: `python3 ios/tools/make_pepe_glb.py` (pure Python; no Godot, no gltfpack).

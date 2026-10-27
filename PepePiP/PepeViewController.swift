@@ -59,14 +59,17 @@ final class PepeViewController: UIViewController {
         feeder.stop(); pip.teardown()
         scnView.isHidden = true; sampleView.isHidden = true
         Log.add("configure \(mode.rawValue) \(Int(size.width))x\(Int(size.height))")
+        model.scene.setFraming(aspect: Float(size.width / size.height))
         switch mode {
         case .videoCall:
             scnView.scene = model.scene.scene
             scnView.pointOfView = model.scene.cameraNode
+            scnView.delegate = model.scene
             scnView.isHidden = false
             if #available(iOS 18, *) {
                 let mv = PepeMetalView(frame: CGRect(origin: .zero, size: size))
                 mv.scene = model.scene.scene
+                mv.frameDelegate = model.scene
                 metalView = mv
                 pip.setupVideoCall(sourceView: sourceView, content: mv, contentSize: size, autoStart: autoStart)
             } else {
@@ -76,7 +79,7 @@ final class PepeViewController: UIViewController {
         case .sampleBuffer, .auto:
             sampleView.isHidden = false
             feeder = PixelBufferFeeder(size: size)
-            feeder.start(scene: model.scene.scene, layer: sampleView.displayLayer)
+            feeder.start(scene: model.scene.scene, layer: sampleView.displayLayer, delegate: model.scene)
             pip.setupSampleBuffer(layer: sampleView.displayLayer, autoStart: autoStart)
         }
     }

@@ -1,12 +1,12 @@
 // Loose-file lookup that also works when the app runs as a guest inside LiveContainer: there `Bundle.main` is the HOST
-// app's bundle, so `Bundle.main.url(forResource:)` finds nothing (black backdrop, no puff, possibly no glb). We try, in
+// app's bundle, so `Bundle.main.url(forResource:)` finds nothing (0.3/0.4: black backdrop; possibly no glb). We try, in
 // order, the bundle that contains our own classes, Bundle.main, and the directory of the running executable, and log
 // which one answered the first time plus a one-off inventory of every asset.
 import Foundation
 import UIKit
 
 enum AppResources {
-    static let assets = ["pepe.glb", "puff.png", "glow.png", "floor_shadow.png", "bg_lounge.png", "bg_office.png", "bg_neon.png"]
+    static let assets = ["pepe.glb"]   // the textures are drawn in code (Backdrops.swift); only the model is a loose file
     private static var announced = false
     private static var reported = false
 

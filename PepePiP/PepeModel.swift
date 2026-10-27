@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.4 livecontainer-resources" }
+enum BuildInfo { static let tag = "0.5 procedural-backdrops+bbox-framing" }
 
 enum Background: String, CaseIterable, Identifiable {
     case lounge, office, neon, plain
@@ -44,6 +44,7 @@ final class PepeModel: ObservableObject {
     @Published var cardSize: CardSize { didSet { UserDefaults.standard.set(cardSize.rawValue, forKey: "cardSize") } }
     @Published var brightness: Double { didSet { UserDefaults.standard.set(brightness, forKey: "brightness"); scene.setBrightness(brightness) } }
     @Published var cigarOn: Bool { didSet { UserDefaults.standard.set(cigarOn, forKey: "cigarOn"); scene.setCigar(on: cigarOn) } }
+    @Published var pepeScale: Double { didSet { UserDefaults.standard.set(pepeScale, forKey: "pepeScale"); scene.setFraming(scale: Float(pepeScale)) } }
     @Published var background: Background { didSet { UserDefaults.standard.set(background.rawValue, forKey: "background"); scene.setBackground(background) } }
 
     /// shown in Settings so builds can be told apart (bump BuildInfo.tag with every change you want to recognise)
@@ -79,6 +80,7 @@ final class PepeModel: ObservableObject {
         brightness = d.object(forKey: "brightness") as? Double ?? 1.4
         cigarOn = d.object(forKey: "cigarOn") as? Bool ?? true
         background = Background(rawValue: d.string(forKey: "background") ?? "") ?? .lounge
+        pepeScale = d.object(forKey: "pepeScale") as? Double ?? 1.0
         director = Director(model: self)
         Log.add(PepeModel.versionLine)
         Log.onChange = { [weak self] in self?.logTick += 1 }
@@ -86,7 +88,7 @@ final class PepeModel: ObservableObject {
             guard let self else { return }
             if let error { Log.add("glb load failed: \(error)"); self.status = "model failed: \(error.localizedDescription)" }
             else {
-                self.scene.setBackground(self.background); self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn)
+                self.scene.setBackground(self.background); self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn); self.scene.setFraming(scale: Float(self.pepeScale))
                 self.sceneLoaded = true; self.director.handle(["type": "state", "state": "idle"])
                 // first-time users see the smoke once, 8 s after launch
                 DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
