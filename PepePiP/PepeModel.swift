@@ -135,7 +135,6 @@ final class PepeModel: ObservableObject {
         smokeBrightness = d.object(forKey: "smokeBrightness") as? Double ?? 1.0
         smokeFlipV = d.object(forKey: "smokeFlipV") as? Bool ?? false
         nebulaVideo = NebulaVideo.Mode(rawValue: d.string(forKey: "nebulaVideo") ?? "") ?? .output   // also the -nebulaVideo launch arg
-        scene.setNebulaMode(nebulaVideo)
         speakReplies = d.object(forKey: "speakReplies") as? Bool ?? true
         micOn = d.object(forKey: "micOn") as? Bool ?? true
         speechLang = d.string(forKey: "speechLang") ?? "auto"
@@ -147,6 +146,7 @@ final class PepeModel: ObservableObject {
         voice = Voice(model: self)
         Log.add(PepeModel.versionLine)
         Log.onChange = { [weak self] in self?.logTick += 1 }
+        scene.setNebulaMode(nebulaVideo)
         scene.load { [weak self] error in
             guard let self else { return }
             if let error { Log.add("glb load failed: \(error)"); self.status = "model failed: \(error.localizedDescription)" }
