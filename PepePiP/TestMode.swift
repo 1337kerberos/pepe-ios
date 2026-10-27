@@ -46,7 +46,7 @@ enum TestMode {
             }
         }
         if let t = time("exhaleAt") {
-            at(t, "exhale (smoke_exhale from 4.25 s)") { model.scene.play("smoke_exhale", loop: false, offset: 4.25) }
+            at(t, "exhale (smoke_exhale from 4.25 s)") { d.playTake(.smokeExhale, offset: 4.25) }
         }
         if let r = value("reaction") {
             at(time("reactAt") ?? 4, "reaction \(r)") {

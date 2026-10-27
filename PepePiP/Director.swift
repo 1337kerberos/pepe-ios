@@ -304,6 +304,13 @@ final class Director {
         }
     }
 
+    /// TestMode: a take started `offset` s in, as a Director one-shot so the base loop comes back when it ends (playing it
+    /// straight on the scene left him in the bind pose after the take: 0.14 simulator shot nebula_smoke2 at 15 s).
+    func playTake(_ clip: Clip, offset: TimeInterval) {
+        idleTimer?.invalidate()
+        oneShot(clip, hold: max(0.1, model.scene.duration(of: clip.rawValue) - offset - 0.25), offset: offset)
+    }
+
     func smokeNow() {
         guard model.scene.has(Clip.smokeExhale.rawValue) else { Log.add("no smoke take in the glb"); return }
         idleTimer?.invalidate()
