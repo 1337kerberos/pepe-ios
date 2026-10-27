@@ -25,6 +25,8 @@ struct ContentView: View {
                 TextField("say something to Pepe", text: $chat).textFieldStyle(.roundedBorder).submitLabel(.send)
                     .onSubmit { model.send(chat: chat); chat = "" }
                 Button("Send") { model.send(chat: chat); chat = "" }.disabled(chat.isEmpty)
+                Button { model.voice.toggle(fromPiP: false) } label: { Image(systemName: model.listening ? "mic.fill" : "mic") }
+                    .buttonStyle(.bordered).tint(model.listening ? .red : .accentColor).disabled(!model.micOn)
             }
             HStack(spacing: 12) {
                 Button { pipRequest += 1 } label: { Label("Float", systemImage: "pip.enter") }.buttonStyle(.borderedProminent).disabled(!model.sceneLoaded)
@@ -97,6 +99,11 @@ struct SettingsView: View {
                     Toggle("Show co-workers (\(model.agents.count) agent\(model.agents.count == 1 ? "" : "s") reported)", isOn: $model.showWorkers)
                     Button("Exhale now") { model.director.smokeNow() }.disabled(!model.sceneLoaded)
                 }
+                Section {
+                    Toggle("Speak replies", isOn: $model.speakReplies)
+                    Toggle("Microphone (push-to-talk)", isOn: $model.micOn)
+                    Picker("Speech language", selection: $model.speechLang) { ForEach(VoiceIO.languages, id: \.id) { Text($0.label).tag($0.id) } }
+                } header: { Text("Voice") } footer: { Text("Mic button (or the PiP play/pause button while Pepe is idle): 6 s of on-device speech recognition, sent as chat. Replies are spoken with the best installed voice for their language (add Enhanced/Premium voices in iOS Settings > Accessibility > Spoken Content). Microphone off = the old playback-only audio session, if PiP misbehaves.") }
                 Section {
                     Toggle("Reactions", isOn: $model.reactionsOn)
                     HStack {

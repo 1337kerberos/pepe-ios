@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.11 reactions" }
+enum BuildInfo { static let tag = "0.12 voice" }
 
 enum Background: String, CaseIterable, Identifiable {
     case ops, street, lounge, office, neon, plain
@@ -67,6 +67,11 @@ final class PepeModel: ObservableObject {
     @Published var background: Background { didSet { UserDefaults.standard.set(background.rawValue, forKey: "background"); scene.setBackground(background); director?.backgroundChanged() } }
     /// 0.11: device reactions (card resize, shake, face-down, battery, headphones), Reactions.swift
     @Published var reactionsOn: Bool { didSet { UserDefaults.standard.set(reactionsOn, forKey: "reactions"); if sceneLoaded { reactions.setEnabled(reactionsOn) } } }
+    /// 0.12 voice (Voice.swift): spoken replies, push-to-talk mic (audio session playAndRecord), recognition language
+    @Published var speakReplies: Bool { didSet { UserDefaults.standard.set(speakReplies, forKey: "speakReplies"); if !speakReplies { voice.stopSpeaking() } } }
+    @Published var micOn: Bool { didSet { UserDefaults.standard.set(micOn, forKey: "micOn"); AudioKeepAlive.shared.configureSession() } }
+    @Published var speechLang: String { didSet { UserDefaults.standard.set(speechLang, forKey: "speechLang") } }
+    @Published var listening = false
     @Published var streetTime: StreetTime { didSet { UserDefaults.standard.set(streetTime.rawValue, forKey: "streetTime"); scene.setStreetTime(streetTime) } }
     @Published var showWorkers: Bool { didSet { UserDefaults.standard.set(showWorkers, forKey: "showWorkers"); scene.setWorkers(agents, enabled: showWorkers) } }
     /// Claude Code sessions on the laptop (from hello.agents and {"type":"agents"}); the brain's own session is the main Pepe
@@ -99,6 +104,7 @@ final class PepeModel: ObservableObject {
     let scene = PepeScene()
     private(set) var director: Director!
     private(set) var reactions: Reactions!
+    private(set) var voice: Voice!
     private var client: BrainClient?
     private var bubbleTimer: Timer?
 
@@ -119,10 +125,14 @@ final class PepeModel: ObservableObject {
         background = Background(rawValue: d.string(forKey: "background") ?? "") ?? .ops
         streetTime = StreetTime(rawValue: d.string(forKey: "streetTime") ?? "") ?? .auto
         reactionsOn = d.object(forKey: "reactions") as? Bool ?? true
+        speakReplies = d.object(forKey: "speakReplies") as? Bool ?? true
+        micOn = d.object(forKey: "micOn") as? Bool ?? true
+        speechLang = d.string(forKey: "speechLang") ?? "auto"
         showWorkers = d.object(forKey: "showWorkers") as? Bool ?? true
         pepeScale = d.object(forKey: "pepeScale") as? Double ?? 1.0
         director = Director(model: self)
         reactions = Reactions(model: self)
+        voice = Voice(model: self)
         Log.add(PepeModel.versionLine)
         Log.onChange = { [weak self] in self?.logTick += 1 }
         scene.load { [weak self] error in
@@ -207,6 +217,12 @@ final class PepeModel: ObservableObject {
         guard !t.isEmpty else { return }
         client?.send(["type": "chat", "text": t])
         director.handle(["type": "user_chat", "text": t, "local": true])
+    }
+
+    /// PiP play/pause (0.12): while the brain is idle and connected = push-to-talk (6 s, or a second press stops early);
+    /// otherwise (busy, offline, mic off) the old summary behaviour.
+    func playPausePressed() {
+        if listening || (micOn && connected && !brainBusy) { voice.toggle(fromPiP: true) } else { requestSummary() }
     }
 
     /// PiP play/pause button: ask the agent for a one-liner. While the brain is busy a chat would be swallowed as the

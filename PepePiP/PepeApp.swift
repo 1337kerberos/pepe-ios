@@ -29,20 +29,42 @@ final class AudioKeepAlive {
     private let player = AVAudioPlayerNode()
     private var running = false
 
+    /// One session for the app's life (see Voice.swift for the reasoning): Microphone on (default) -> .playAndRecord +
+    /// mixWithOthers / defaultToSpeaker / A2DP (push-to-talk + TTS + the PiP keep-alive on the same session);
+    /// Microphone off -> the 0.11 session, .playback + mixWithOthers (TTS still works, PTT disabled).
+    /// Called at launch and when the Microphone toggle changes (the keep-alive engine keeps running across the change;
+    /// if it stops, AVAudioEngineConfigurationChange restarts it).
     func configureSession() {
+        let mic = UserDefaults.standard.object(forKey: "micOn") as? Bool ?? true
         do {
             let s = AVAudioSession.sharedInstance()
-            try s.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            if mic {
+                var opts: AVAudioSession.CategoryOptions = [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP]
+                if VoiceIO.useHFPMic { opts.insert(.allowBluetooth) }
+                try s.setCategory(.playAndRecord, mode: .default, options: opts)
+            } else {
+                try s.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            }
             try s.setActive(true)
+            Log.add("audio session: \(s.category.rawValue.replacingOccurrences(of: "AVAudioSessionCategory", with: "")) options \(s.categoryOptions.rawValue), output \(s.currentRoute.outputs.first?.portType.rawValue ?? "-")")
         } catch { Log.add("audio session: \(error)") }
+        if !observing {
+            observing = true
+            NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+                guard let self, self.running else { return }
+                Log.add("keep-alive engine: configuration change -> restart")
+                self.running = false; self.player.stop(); self.engine.stop(); self.start()
+            }
+        }
     }
+    private var observing = false
 
     func start() {
         guard !running else { return }
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100) else { return }
         buffer.frameLength = buffer.frameCapacity // zeroed = one second of silence
-        engine.attach(player)
+        if player.engine == nil { engine.attach(player) }   // start() runs again after a configuration change
         engine.connect(player, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.outputVolume = 0
         do {

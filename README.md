@@ -207,6 +207,31 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   on the street (40 elsewhere). Co-workers are hidden on the street. glb: 20 clips, 9.81 MB.
   **Needs a device test**: vertex colours on the custom geometry (if the street renders white, the `.color` source is
   being ignored), the look of the 10 deg stride/ground mismatch, fps with the set (expect no change: ~4k tris).
+- **0.11: device reactions** (`PepePiP/Reactions.swift`, Settings > Reactions, default on; test buttons Squash /
+  Stumble / Sleep / Wake fake the triggers; every reaction logs `reaction: ...`). (a) PiP card resized (sample-buffer
+  path, `didTransitionToRenderSize`; the first size after PiP start is the baseline) -> squash-and-stretch of the glb's
+  top-level nodes about the feet (per frame, absolute in time) + very_happy (bigger) / shaking_head_no (smaller).
+  (b) CoreMotion device motion 20 Hz: shake (> 2 g on two samples, 3 s debounce) -> stumble (standing_angry 1 s);
+  face down (gravity.z > 0.85 for 2 s) -> sleep: idle loop bored, lights + backdrop dim to 35 % over 1.2 s, no smoke /
+  idle life, Live Activity "sleeping"; picked up (gravity.z < 0.3 for 0.6 s) -> lights back + wave. (c) battery < 20 %
+  unplugged, or Low Power Mode -> idle loop bored, no smoke, status "low battery"; plugging in -> very_happy + "ahh,
+  power". (d) headphones / AirPods route appears -> nod. **Needs a device test**: render-size callback on pinch and
+  double-tap, CoreMotion under PiP with the screen off, the shake threshold.
+- **0.12: phone-native voice** (`PepePiP/Voice.swift`, Settings > Voice). Push-to-talk: the mic button next to Send, or
+  the **PiP play/pause button while the brain is idle and connected** (busy/offline keeps the 0.9 summary behaviour), opens
+  a 6 s `SFSpeechRecognizer` session (on-device when the locale supports it; partials in the bubble; tap again to stop
+  early) and sends the final transcript as `chat`. Language: auto (phone language) / en-US / uk-UA / ru-RU. Permissions
+  (`NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`) are asked on the first in-app mic tap; from
+  the PiP card without them Pepe says "open Pepe once". TTS: every brain `text` is spoken by `AVSpeechSynthesizer`
+  (Speak replies, default on), a new text cuts the previous one, the best installed voice (premium > enhanced > default)
+  for the text's language (NaturalLanguage) is used, markdown/code/URLs are stripped. **Audio session**: Microphone on
+  (default) = `.playAndRecord` + mixWithOthers / defaultToSpeaker / allowBluetoothA2DP for the whole app life (the PiP
+  keep-alive plays on it; recording only inside a PTT session, on a second AVAudioEngine); `.allowBluetooth` (HFP) is
+  left out on purpose (with it iOS routes AirPods to HFP and the user's music turns to call quality while Pepe floats;
+  `VoiceIO.useHFPMic`). Microphone off = the old `.playback` session. The keep-alive engine restarts itself on
+  `AVAudioEngineConfigurationChange`. **Needs a device test**: PiP still starts/keeps alive on playAndRecord (if not:
+  Microphone off), recognition from the PiP button while backgrounded (error 1700 reported on older iOS), TTS in the
+  background, which voices are installed.
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 

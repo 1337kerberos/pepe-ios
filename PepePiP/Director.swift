@@ -64,6 +64,12 @@ final class Director {
         if let bubble { say(bubble, hold: 3) }
     }
 
+    /// push-to-talk session (Voice.swift): he leans in to listen; the status says so while the mic is open
+    func listening(_ on: Bool) {
+        if on { oneShot(.acknowledging, hold: 1.2); model.setStatus("listening") }
+        else if model.status == "listening" { model.setStatus(offline ? "brain offline" : currentState) }
+    }
+
     /// face-down: bored loop + dimmed lights while the brain is idle; picked up: lights back, wave
     func setSleeping(_ on: Bool) {
         guard on != sleeping else { return }
@@ -124,6 +130,7 @@ final class Director {
             loop(talkFlip ? .talkingFunny : .explain); talkFlip.toggle()
             say(clean, hold: min(20, 6 + 0.03 * Double(clean.count)))
             model.addCard("say", clean)
+            model.voice.speak(clean)                                  // 0.12: spoken reply (Settings > Speak replies)
         case "tool":
             onTool(ev)
         case "result":
