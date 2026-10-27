@@ -31,7 +31,10 @@ with open(DST, 'w') as f:
     f.write('// Dynamic Island (and anything else that wants a 2D Pepe). Missing states fall back to an SF Symbol (PepeSprite.swift).\n')
     f.write('import UIKit\n\nenum EmbeddedSprites {\n    static let states: [String] = [%s]\n' % ', '.join('"%s"' % s for s, _ in entries))
     f.write('    static func image(_ state: String) -> UIImage? {\n        guard let b64 = data[state], let d = Data(base64Encoded: b64) else { return nil }\n        return UIImage(data: d)\n    }\n')
-    f.write('    private static let data: [String: String] = [\n')
-    for st, b64 in entries: f.write('        "%s": "%s",\n' % (st, b64))
-    f.write('    ]\n}\n')
+    if not entries:   # Swift: an empty dictionary literal must be [:] (an empty [ ] is an array -> compile error)
+        f.write('    private static let data: [String: String] = [:]\n}\n')
+    else:
+        f.write('    private static let data: [String: String] = [\n')
+        for st, b64 in entries: f.write('        "%s": "%s",\n' % (st, b64))
+        f.write('    ]\n}\n')
 print(f'{DST}: {len(entries)} sprites embedded ({total/1e3:.0f} KB png)' + (f', missing: {missing}' if missing else ''))

@@ -8,6 +8,5 @@ enum EmbeddedSprites {
         guard let b64 = data[state], let d = Data(base64Encoded: b64) else { return nil }
         return UIImage(data: d)
     }
-    private static let data: [String: String] = [
-    ]
+    private static let data: [String: String] = [:]
 }
