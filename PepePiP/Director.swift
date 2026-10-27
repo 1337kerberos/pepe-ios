@@ -9,11 +9,12 @@ enum Clip: String, CaseIterable {
     case think, typing, explain, talkingFunny = "talking_funny", acknowledging, nod = "head_nod_yes"
     case fistPump = "fist_pump", veryHappy = "very_happy", cheering, shakeNo = "shaking_head_no", angry = "standing_angry"
     case wave = "wave_hello", phone = "talking_on_phone", bored
+    case walk                                                         // in place (0.10 street treadmill)
     case smokeLight = "smoke_light", smokeExhale = "smoke_exhale"   // smoke_light has no boss bake yet: absent from the glb until baked
 
     var loops: Bool {
         switch self {
-        case .idle, .shift, .look, .breathe, .think, .typing, .explain, .talkingFunny, .phone, .bored: return true
+        case .idle, .shift, .look, .breathe, .think, .typing, .explain, .talkingFunny, .phone, .bored, .walk: return true
         default: return false
         }
     }
@@ -27,7 +28,7 @@ let clipAliases: [String: Clip] = [
     "mx_standing_fist_pump": .fistPump, "mx_victory_idle": .veryHappy, "mx_cheering": .cheering, "mx_shaking_head_no": .shakeNo,
     "mx_shrug": .shakeNo, "mx_standing_angry": .angry, "meshy_facepalm": .angry, "cmu_wave_hello": .wave,
     "mx_talking_on_phone": .phone, "mx_bored": .bored, "mx_pointing": .explain, "cmu_stretching": .shift, "mx_look_at_watch": .shift,
-    "mx_drinking": .look, "vid_smoke_light": .smokeLight, "vid_smoke_exhale": .smokeExhale,
+    "mx_drinking": .look, "cmu_casual_walk": .walk, "vid_smoke_light": .smokeLight, "vid_smoke_exhale": .smokeExhale,
     // desktop-only clips -> closest on the phone (music / dance / idle-life extras)
     "wows_desk_dance": .cheering, "cmu_mickey_dance": .cheering, "cmu_charleston_side_by_sid": .cheering, "wows_knee_slide": .veryHappy,
     "meshy_make_it_rain": .veryHappy, "idle_hands_pockets": .shift, "meshy_idle_arms_crossed": .idle, "cmu_combing_hair": .look,
@@ -45,6 +46,21 @@ final class Director {
     private var smokeTimer: Timer?
 
     init(model: PepeModel) { self.model = model }
+
+    /// The idle base loop: on the street preset he walks in place while the set scrolls (StreetSet), else he stands.
+    private var idleClip: Clip { model.background == .street && model.scene.has(Clip.walk.rawValue) ? .walk : .idle }
+    private var offline = false
+
+    /// Settings > Background changed: swap the idle loop (walk <-> stand) if he is idle right now.
+    func backgroundChanged() {
+        guard model.sceneLoaded else { return }
+        if currentState == "idle" || offline {
+            let clip: Clip = offline && idleClip != .walk ? .bored : idleClip
+            Log.add("background -> idle loop \(clip.rawValue)")
+            loop(clip)
+            if !model.synced { scheduleIdleLife() }
+        }
+    }
 
     // MARK: entry
     func handle(_ ev: [String: Any]) {
@@ -100,9 +116,11 @@ final class Director {
         case "beat":
             onBeat(ev)
         case "brain_down":
-            loop(.bored); model.setStatus("brain offline"); model.brainBusy = false
+            offline = true
+            loop(idleClip == .walk ? .walk : .bored); model.setStatus("brain offline"); model.brainBusy = false   // street: he keeps strolling
             scheduleIdleLife(); scheduleSmoke()                     // local fallback while the brain is away
         case "brain_up":
+            offline = false
             oneShot(.nod, hold: 1.2); model.setStatus("connected")
         case "interrupt":
             oneShot(.acknowledging, hold: 1); say("ok, stopping", hold: 2)
@@ -125,7 +143,7 @@ final class Director {
         }
         switch s {
         case "idle":
-            model.brainBusy = false; loop(.idle); model.setStatus("idle")
+            model.brainBusy = false; loop(idleClip); model.setStatus("idle")
             if model.synced { idleTimer?.invalidate(); smokeTimer?.invalidate() } else { scheduleIdleLife(); scheduleSmoke() }   // synced: the brain sends idle_life beats
         case "thinking":
             model.brainBusy = true; loop(.think); model.setStatus("thinking")
@@ -200,7 +218,7 @@ final class Director {
             if let clip, !isLoop, ["react", "emote", "celebrate", "use_prop"].contains(verb) {
                 let hold = (b["max_hold_s"] as? Double) ?? model.scene.duration(of: clip.rawValue)
                 if offset < hold { oneShot(clip, hold: hold - offset, offset: offset) }
-            } else if synced, let clip, isLoop, ["idle", "act", "say"].contains(verb) {
+            } else if synced, let clip, isLoop, ["idle", "act", "say"].contains(verb), !(verb == "idle" && idleClip == .walk) {   // street: keep walking
                 loop(clip, offset: offset)
             }
             if let bubble = b["bubble"] as? String, (b["bubble_style"] as? String) == "aside" { say(bubble, hold: 3) }
@@ -262,9 +280,14 @@ final class Director {
         idleTimer?.invalidate()
         if model.synced { return }
         idleTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 8...20), repeats: false) { [weak self] _ in
-            guard let self, self.currentState == "idle", !self.model.synced else { return }
-            let pick = [Clip.shift, Clip.look, Clip.breathe].randomElement()!
-            self.oneShot(pick, hold: min(8, self.model.scene.duration(of: pick.rawValue)))
+            guard let self, self.currentState == "idle" || self.offline, !self.model.synced else { return }
+            if self.idleClip == .walk {
+                // walking: no fidgets every few seconds (each one stops the street); now and then he pauses to look around
+                if Double.random(in: 0...1) < 0.35 { self.oneShot(.look, hold: 4) }
+            } else if self.currentState == "idle" {
+                let pick = [Clip.shift, Clip.look, Clip.breathe].randomElement()!
+                self.oneShot(pick, hold: min(8, self.model.scene.duration(of: pick.rawValue)))
+            }
             self.scheduleIdleLife()
         }
     }

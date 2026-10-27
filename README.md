@@ -186,6 +186,27 @@ About 1,100 lines of Swift in total (about 1,000 in the app, the rest the option
   **Needs a device test**: the Island layouts (compact/minimal/expanded) and sprite rendering, the two intent buttons
   from the Lock Screen while the app is backgrounded or not running, update delivery while the phone is locked (the
   3 s throttle vs Apple's budget), and whether the activity survives the 7-day re-sign.
+- **0.10: street walk** (Settings > Look > Background "street", plus "Street time": auto / dawn / day / dusk / night).
+  `PepePiP/StreetSet.swift` builds a procedural treadmill set: Pepe's pavement (1.5 m joints), kerbs, a road with dashes
+  and edge lines, lamp posts every 12 m on both sides (emissive heads), two rows of buildings (5-9 m wide, 6-24 m tall,
+  vertex-coloured walls, a window grid per facade, lit/dark at random, a shop-window band at street level), a far
+  skyline and a vertex-coloured sky 300 m away. Everything is merged custom `SCNGeometry` (3 tile layouts in 4 tiles of
+  36 m, one geometry per tile with 5 materials: lambert walls/ground with vertex colours, lit windows, dark windows, lamp
+  heads, shops): no textures, no files, ~4k triangles, ~25 draw calls; the log prints the street's triangle count.
+  When the brain is idle (or offline) the idle base loop is the new **in-place `walk` clip** (`tools/make_pepe_glb.py`
+  `IN_PLACE`: the Hips' horizontal travel of `boss_walk` is removed linearly; it moved 1.809 m in 1.70 s, so the set
+  scrolls at `StreetSet.walkSpeed` = 1.0643 m/s); the set scrolls only while `walk` is the playing clip (eased in/out
+  over ~0.2 s), so a one-shot, the smoke break, thinking or typing stop the street and the walk resumes after.
+  Fidgets are replaced by an occasional 4 s look-around stop. A car (box body, cabin, two glowing discs per end:
+  headlights toward the camera, red tail lights away) passes every 6-12 s in one of two lanes at 8-13 m/s.
+  Time of day from the clock (dawn 05-08, day 08-17, dusk 17-20, night 20-05, re-checked every 20 s): sky colours,
+  window/shop/lamp colours, walls dimmed with a post-lighting multiply (Pepe is not), light preset per period (key
+  >= 1100 so he stays readable). Direction: the ground moves **away** from the camera (he walks toward you, things
+  recede behind him); the street is turned 10 deg (`StreetSet.streetYaw`) so its vanishing point sits in the 3/4 frame.
+  The per-frame update is idempotent across renderers (only a later timestamp advances the set). Camera zFar is 400
+  on the street (40 elsewhere). Co-workers are hidden on the street. glb: 20 clips, 9.81 MB.
+  **Needs a device test**: vertex colours on the custom geometry (if the street renders white, the `.color` source is
+  being ignored), the look of the 10 deg stride/ground mismatch, fps with the set (expect no change: ~4k tris).
 - **Build tag**: Settings > Build shows `PepePiP <version> (<build>) · <BuildInfo.tag>` (`PepeModel.swift`); it is also the
   first line of the in-app log. Bump `BuildInfo.tag` / `CFBundleVersion` to tell builds apart.
 

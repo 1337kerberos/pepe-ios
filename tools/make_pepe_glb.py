@@ -21,7 +21,7 @@ drop '-cc' from the gltfpack argv (keep '-kn'; '-ac -af 24' are fine) -> no mesh
 """
 import json, os, struct, sys, io
 import numpy as np
-LAB = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LAB = os.environ.get('PEPE_LAB') or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # PEPE_LAB: run from a worktree
 sys.path.insert(0, os.path.join(LAB, 'web'))
 from make_clips_boss import read_glb, write_glb, rebuild, prune_accessors   # noqa: E402
 from PIL import Image                                                        # noqa: E402
@@ -32,8 +32,11 @@ CLIP_DIR = os.path.join(LAB, 'out/wip/web_boss/clips_v2')
 # smoke_light has no boss bake yet (only retarget_lab/anims/vid_smoke_light.glb): it is skipped until baked.
 CLIPS = ['idle_standing_a', 'shifting_weight', 'look_around', 'idle_breathing', 'think', 'typing', 'explain', 'talking_funny',
          'acknowledging', 'head_nod_yes', 'fist_pump', 'very_happy', 'cheering', 'shaking_head_no', 'standing_angry',
-         'wave_hello', 'talking_on_phone', 'bored', 'smoke_light', 'smoke_exhale']
+         'wave_hello', 'talking_on_phone', 'bored', 'smoke_light', 'smoke_exhale', 'walk']
 SMOKE_CLIPS = {'smoke_light', 'smoke_exhale'}
+# locomotion clips played IN PLACE on the phone (street treadmill, 0.10): the Hips' horizontal travel is removed linearly
+# over the clip (the bob/sway stays); the world-space speed it had is printed so PepeScene.walkSpeed can match the set to it
+IN_PLACE = {'walk'}
 CIGAR_BONE, HAND_BONE = 'PROP_cigar', 'RightHand'
 
 
@@ -161,9 +164,21 @@ def merge_clips(J, BIN, clip_paths, grip_from):
             nm = CJ['nodes'][ch['target']['node']].get('name')
             if nm not in rig.byname: dropped.append(nm); continue
             s = anim['samplers'][ch['sampler']]
+            strip = name in IN_PLACE and nm == 'Hips' and ch['target']['path'] == 'translation'
             for key in ('input', 'output'):
-                if s[key] not in cache: cache[s[key]] = add_acc(acc(CJ, CB, s[key]), CJ['accessors'][s[key]]['type'])
-            samplers.append({'input': cache[s['input']], 'output': cache[s['output']], 'interpolation': s.get('interpolation', 'LINEAR')})
+                ck = (s[key], strip and key == 'output')
+                if ck not in cache:
+                    data = acc(CJ, CB, s[key])
+                    if ck[1]:
+                        tm = acc(CJ, CB, s['input'])[:, 0].astype(float); frac = (tm - tm[0]) / max(1e-9, tm[-1] - tm[0])
+                        drift = data[-1].astype(float) - data[0].astype(float); drift[1] = 0
+                        tr0 = rig.tracks(CJ, CB); hips = rig.byname['Hips']
+                        w0, w1 = rig.world(tr0, hips, tm[0])[:3, 3], rig.world(tr0, hips, tm[-1])[:3, 3]
+                        print(f'  {name}: in place; Hips drift {drift.round(3).tolist()} (local) = {np.round(w1 - w0, 3).tolist()} m world over {tm[-1] - tm[0]:.3f} s'
+                              f' -> walk speed {np.linalg.norm((w1 - w0)[[0, 2]]) / (tm[-1] - tm[0]):.4f} m/s (PepeScene.walkSpeed)')
+                        data = data - frac[:, None] * drift[None, :]
+                    cache[ck] = add_acc(data, CJ['accessors'][s[key]]['type'])
+            samplers.append({'input': cache[(s['input'], False)], 'output': cache[(s['output'], strip)], 'interpolation': s.get('interpolation', 'LINEAR')})
             channels.append({'sampler': len(samplers) - 1, 'target': {'node': rig.byname[nm], 'path': ch['target']['path']}})
         has_cigar = any(c['target']['node'] == cig for c in channels)
         if name not in SMOKE_CLIPS and not has_cigar:

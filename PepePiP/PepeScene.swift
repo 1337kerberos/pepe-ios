@@ -48,6 +48,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
     private var cigarOn = true
     private var exhaleCount = 0
     private var ops: OpsOffice?
+    private var street: StreetSet?
     private var workers: [String: Worker] = [:]
     private var showWorkers = true
     private var glbURL: URL?
@@ -99,9 +100,11 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         statusNode.position = SCNVector3(0, 0.42, 0.9); scene.rootNode.addChildNode(statusNode)
         setupCigar()
         let office = OpsOffice(); office.root.isHidden = true; scene.rootNode.addChildNode(office.root); ops = office
+        let st = StreetSet(); st.root.isHidden = true; scene.rootNode.addChildNode(st.root); street = st
+        st.onPeriodChange = { [weak self] _ in guard let self, self.background == .street else { return }; self.setBackground(.street) }   // lights follow the clock
         setBackground(background)
         setStatus("ready")
-        Log.add("triangles: character \(triangles(in: characterRoot, excluding: office.root)), office \(triangles(in: office.root, excluding: nil))")
+        Log.add("triangles: character \(triangles(in: characterRoot, excluding: office.root)), office \(triangles(in: office.root, excluding: nil)), street \(st.triangleCount) (built, ~20 draw calls)")
     }
 
     private func triangles(in node: SCNNode?, excluding: SCNNode?) -> Int {
@@ -177,8 +180,19 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         case .neon:   preset = L(key: (1150, c(0.85, 1.0, 0.9)), fill: (450, c(0.9, 0.75, 1.0)), rim: (900, c(0.8, 0.6, 1.0)), amb: (350, c(0.9, 0.85, 1.0)))
         case .plain:  preset = L(key: (1200, c(1.0, 0.96, 0.9)), fill: (400, c(0.8, 0.87, 1.0)), rim: (600, c(0.95, 0.95, 1.0)), amb: (350, .white))
         case .ops:    preset = L(key: (1200, c(0.92, 0.95, 1.0)), fill: (400, c(0.8, 0.87, 1.0)), rim: (650, c(0.7, 0.8, 1.0)), amb: (260, c(0.85, 0.9, 1.0)))
+        case .street:
+            // by time of day; the key never drops below ~1100 so Pepe stays readable at night (the set is dimmed instead)
+            switch street?.period ?? .day {
+            case .dawn:  preset = L(key: (1150, c(1.0, 0.8, 0.65)), fill: (400, c(0.75, 0.8, 1.0)), rim: (750, c(1.0, 0.7, 0.6)), amb: (330, c(0.9, 0.8, 0.85)))
+            case .dusk:  preset = L(key: (1150, c(1.0, 0.72, 0.48)), fill: (380, c(0.6, 0.6, 1.0)), rim: (850, c(1.0, 0.55, 0.4)), amb: (300, c(0.8, 0.7, 0.85)))
+            case .night: preset = L(key: (1100, c(0.78, 0.84, 1.0)), fill: (330, c(0.6, 0.7, 1.0)), rim: (950, c(1.0, 0.8, 0.5)), amb: (250, c(0.6, 0.65, 0.9)))
+            default:     preset = L(key: (1250, c(1.0, 0.96, 0.9)), fill: (450, c(0.75, 0.85, 1.0)), rim: (600, c(1.0, 1.0, 1.0)), amb: (450, c(0.85, 0.9, 1.0)))
+            }
         }
         ops?.root.isHidden = bg != .ops
+        street?.root.isHidden = bg != .street
+        cameraNodeRef?.camera?.zFar = bg == .street ? 400 : 40       // the street's sky sits 300 m away
+        for w in workers.values { w.root.isHidden = bg == .street }   // co-workers live in the office, not on the road
         fitBackdrop()   // the wall sits behind the far desks in ops, closer otherwise
         for (l, p) in [(keyLight, preset.key), (fillLight, preset.fill), (rimLight, preset.rim), (ambLight, preset.amb)] {
             l.color = p.1; l.intensity = p.0 * CGFloat(brightness)
@@ -186,7 +200,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         // backdrop texture: the laptop-made JPEG embedded in EmbeddedBackdrops.swift (the Core Graphics versions came out
         // near-black on device); the CG drawing stays as the fallback if a decode ever fails
         var tex: UIImage? = nil; var source = "none"
-        if bg != .plain {
+        if bg != .plain && bg != .street {
             if let e = EmbeddedBackdrops.image(bg == .ops ? "office" : bg.rawValue) { tex = e; source = "embedded jpeg" }
             else { switch bg { case .lounge: tex = Backdrops.lounge; case .office: tex = Backdrops.office; default: tex = Backdrops.neon }; source = "CG fallback (embedded decode failed)" }
         }
@@ -194,11 +208,15 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         if let m = backdrop?.geometry?.firstMaterial { m.diffuse.contents = tex ?? UIColor.darkGray; m.diffuse.intensity = 1; m.multiply.contents = nil }
         floorNode?.isHidden = bg == .plain
         blobs.forEach { $0.0.isHidden = bg != .neon }
+        if bg == .street { source = "procedural street, \(street?.period.rawValue ?? "?")" }
         Log.add("background \(bg.rawValue): \(source)\(tex.map { " \(Int($0.size.width))x\(Int($0.size.height))" } ?? "")")
     }
 
     /// Settings slider 0.5-2.0 (default 1.4): scales every light's intensity (re-applies the current preset).
     func setBrightness(_ factor: Double) { brightness = factor; setBackground(background) }
+
+    /// Settings > Street time (auto = the phone clock); re-applies the lights when the street is showing.
+    func setStreetTime(_ t: StreetTime) { street?.setTime(t); if background == .street { setBackground(.street) } }
 
     var cameraNode: SCNNode? { cameraNodeRef }
 
@@ -253,6 +271,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
             ops.root.simdPosition = simd_float3(camTarget.x - tanf(PepeScene.camBaseYaw) * deskDepth, bbox.min.y, camTarget.z)
             for w in workers.values { w.root.simdPosition = ops.root.simdPosition + ops.workerSlots[w.slot] }
         }
+        street?.root.simdPosition = simd_float3(0, bbox.min.y, 0)          // pavement top under his feet; he walks in place at the origin
         Log.add(String(format: "backdrop: %.1fx%.1f m at (%.2f, %.2f, %.2f), %.1f m from the camera; look-at (%.2f, %.2f, %.2f)", w, h, cx, cy, camTarget.z - back, dist, camTarget.x, camTarget.y, camTarget.z))
     }
 
@@ -286,6 +305,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
                 w.root.simdPosition = (ops.map { $0.root.simdPosition + $0.workerSlots[slot] }) ?? simd_float3(Float(slot) * 1.2 - 1.8, 0, -2.3); w.root.scale = SCNVector3(0.9, 0.9, 0.9)
                 scene.rootNode.addChildNode(w.root)
                 ops?.chairs[slot].isHidden = true
+                w.root.isHidden = background == .street
                 Log.add("agent joined: \(a.id) (\(a.state)) -> desk \(slot)")
                 w.load(url: url, shareMaterialsFrom: main) { [weak self, weak w] ok in
                     guard let self, let w else { return }
@@ -317,7 +337,10 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
 
     // SCNSceneRendererDelegate: every renderer (SCNView, MTKView's SCNRenderer, the pixel-buffer feeder) calls this on
     // its render thread; the camera is a pure function of time, so several renderers can share the scene safely.
-    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) { placeCamera(time: time) }
+    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        placeCamera(time: time)
+        if let street, !street.root.isHidden { street.tick(time: time) }
+    }
 
     func duration(of clip: String) -> TimeInterval { durations[clip] ?? 2 }
     func has(_ clip: String) -> Bool { players[clip] != nil }
@@ -340,6 +363,7 @@ final class PepeScene: NSObject, SCNSceneRendererDelegate {
         if scene.rootNode.animationPlayer(forKey: clip) == nil { scene.rootNode.addAnimationPlayer(p, forKey: clip) }
         p.play()
         current = clip
+        street?.walking = clip == "walk"          // the treadmill scrolls only while the walk is the playing clip
         if clip == "smoke_exhale" {
             let n = exhaleCount + 1; exhaleCount = n
             DispatchQueue.main.asyncAfter(deadline: .now() + PepeScene.exhaleTime / speed) { [weak self] in

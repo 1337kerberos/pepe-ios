@@ -3,13 +3,13 @@ import Foundation
 import Combine
 import UIKit
 
-enum BuildInfo { static let tag = "0.9 live-activity" }
+enum BuildInfo { static let tag = "0.10 street" }
 
 enum Background: String, CaseIterable, Identifiable {
-    case ops, lounge, office, neon, plain
+    case ops, street, lounge, office, neon, plain
     var id: String { rawValue }
     var label: String {
-        switch self { case .ops: return "ops center (office, co-workers)"; case .lounge: return "lounge (warm room, spot + rim)"; case .office: return "office (window, desk)"; case .neon: return "neon (drifting glow)"; case .plain: return "plain" }
+        switch self { case .ops: return "ops center (office, co-workers)"; case .street: return "street (walks when idle, time of day)"; case .lounge: return "lounge (warm room, spot + rim)"; case .office: return "office (window, desk)"; case .neon: return "neon (drifting glow)"; case .plain: return "plain" }
     }
 }
 
@@ -64,7 +64,8 @@ final class PepeModel: ObservableObject {
     @Published var brightness: Double { didSet { UserDefaults.standard.set(brightness, forKey: "brightness"); scene.setBrightness(brightness) } }
     @Published var cigarOn: Bool { didSet { UserDefaults.standard.set(cigarOn, forKey: "cigarOn"); scene.setCigar(on: cigarOn) } }
     @Published var pepeScale: Double { didSet { UserDefaults.standard.set(pepeScale, forKey: "pepeScale"); scene.setFraming(scale: Float(pepeScale)) } }
-    @Published var background: Background { didSet { UserDefaults.standard.set(background.rawValue, forKey: "background"); scene.setBackground(background) } }
+    @Published var background: Background { didSet { UserDefaults.standard.set(background.rawValue, forKey: "background"); scene.setBackground(background); director?.backgroundChanged() } }
+    @Published var streetTime: StreetTime { didSet { UserDefaults.standard.set(streetTime.rawValue, forKey: "streetTime"); scene.setStreetTime(streetTime) } }
     @Published var showWorkers: Bool { didSet { UserDefaults.standard.set(showWorkers, forKey: "showWorkers"); scene.setWorkers(agents, enabled: showWorkers) } }
     /// Claude Code sessions on the laptop (from hello.agents and {"type":"agents"}); the brain's own session is the main Pepe
     @Published var agents: [AgentInfo] = [] { didSet { if sceneLoaded { scene.setWorkers(agents, enabled: showWorkers) }; refreshLiveActivity() } }
@@ -113,6 +114,7 @@ final class PepeModel: ObservableObject {
         brightness = d.object(forKey: "brightness") as? Double ?? 1.4
         cigarOn = d.object(forKey: "cigarOn") as? Bool ?? true
         background = Background(rawValue: d.string(forKey: "background") ?? "") ?? .ops
+        streetTime = StreetTime(rawValue: d.string(forKey: "streetTime") ?? "") ?? .auto
         showWorkers = d.object(forKey: "showWorkers") as? Bool ?? true
         pepeScale = d.object(forKey: "pepeScale") as? Double ?? 1.0
         director = Director(model: self)
@@ -122,7 +124,7 @@ final class PepeModel: ObservableObject {
             guard let self else { return }
             if let error { Log.add("glb load failed: \(error)"); self.status = "model failed: \(error.localizedDescription)" }
             else {
-                self.scene.setBackground(self.background); self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn); self.scene.setFraming(scale: Float(self.pepeScale))
+                self.scene.setStreetTime(self.streetTime); self.scene.setBackground(self.background); self.scene.setBrightness(self.brightness); self.scene.setCigar(on: self.cigarOn); self.scene.setFraming(scale: Float(self.pepeScale))
                 self.sceneLoaded = true; self.director.handle(["type": "state", "state": "idle"])
                 self.scene.setWorkers(self.agents, enabled: self.showWorkers)
                 self.pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.scene.pruneWorkers() }
