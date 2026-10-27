@@ -80,7 +80,12 @@ final class PepeViewController: UIViewController {
     private func appWentToBackground() {
         // canStartPictureInPictureAutomaticallyFromInline does this for us when the source view is on screen; this is
         // the belt-and-braces path (and the place to look in the log if the card never appears).
-        Log.add("background; PiP possible=\(pip.isPossible) active=\(pip.isActive)")
+        Log.add("background; PiP possible=\(pip.isPossible) active=\(pip.isActive) mode=\(activeMode) feederFrames=\(feeder.frames)")
+        let f0 = feeder.frames
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            Log.add("background +3s: feederFrames=\(self.feeder.frames) (+\(self.feeder.frames - f0)) PiP active=\(self.pip.isActive)")
+        }
     }
 
     func startPiP() { pip.start() }

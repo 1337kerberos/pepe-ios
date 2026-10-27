@@ -21,9 +21,17 @@ final class PepeMetalView: MTKView, MTKViewDelegate {
         colorPixelFormat = .bgra8Unorm
         depthStencilPixelFormat = .depth32Float
         preferredFramesPerSecond = 30
-        isPaused = false; enableSetNeedsDisplay = false
+        // MTKView's own CADisplayLink stops when the app goes to the background, which froze the PiP card: drive the
+        // draws from a GCD timer instead (the audio background mode keeps the process alive while the card is up)
+        isPaused = true; enableSetNeedsDisplay = false
         delegate = self
+        let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "pepe.mtk", qos: .userInteractive))
+        t.schedule(deadline: .now(), repeating: 1.0 / 30.0, leeway: .milliseconds(4))
+        t.setEventHandler { [weak self] in DispatchQueue.main.async { self?.draw() } }
+        ticker = t; t.resume()
     }
+    private var ticker: DispatchSourceTimer?
+    deinit { ticker?.cancel() }
     required init(coder: NSCoder) { fatalError() }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}

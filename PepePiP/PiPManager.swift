@@ -14,7 +14,9 @@ enum PiPMode: String, CaseIterable, Identifiable {
     }
     var resolved: PiPMode {
         guard self == .auto else { return self }
-        if #available(iOS 18, *) { return .videoCall } else { return .sampleBuffer }
+        // sample buffer by default: its GCD-timer feeder keeps rendering in the background (the MTKView card froze on
+        // the first device test) and it gives the play/skip buttons; "video-call + MTKView" stays selectable in settings
+        return .sampleBuffer
     }
 }
 
